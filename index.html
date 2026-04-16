@@ -120,7 +120,8 @@ function draw() {
   var maeS = +document.getElementById('mae').value;
   var ushiroS = +document.getElementById('ushiro').value;
   var wall = 250;
-  var effectiveU = (pat === 'I字') ? 100 : U;
+  var linewidth = +document.getElementById('linewidth').value;
+  var effectiveU = (pat === 'I字') ? linewidth : U;
   var ku = (L - lS - rS - effectiveU * (n-1)) / n;
 
   var warnEl = document.getElementById('warn');
@@ -219,11 +220,21 @@ function draw() {
       ctx.stroke();
     }
   } else {
-    var allPos = [lS];
+    var allPos = [lS, L-rS];
     for (var k = 0; k < n-1; k++) allPos.push(lS + (k+1)*ku + k*effectiveU + effectiveU/2);
-    allPos.push(L-rS);
     for (var i = 0; i < allPos.length; i++) {
-      var cx = pitX + allPos[i]*scale;
+      var pos = allPos[i];
+      var cx;
+      if (i === 0) {
+        // 左端: 点線の左側
+        cx = pitX + pos*scale - half;
+      } else if (i === 1) {
+        // 右端: 点線の右側
+        cx = pitX + pos*scale + half;
+      } else {
+        // 中間: スキマ中央
+        cx = pitX + pos*scale;
+      }
       ctx.strokeStyle = lineColor; ctx.lineWidth = lineW;
       ctx.beginPath(); ctx.moveTo(cx, ushiroSy); ctx.lineTo(cx, maeSy); ctx.stroke();
     }
@@ -313,7 +324,7 @@ document.getElementById('rensuu').addEventListener('change', function() {
   var lS = +document.getElementById('hidari').value;
   var rS = +document.getElementById('migi').value;
   var pat = document.getElementById('pattern').value;
-  var effectiveU = (pat === 'I字') ? 100 : +document.getElementById('ujihaba').value;
+  var effectiveU = (pat === 'I字') ? +document.getElementById('linewidth').value : +document.getElementById('ujihaba').value;
   // 区画幅2000固定で間口を自動計算
   var newMaguchi = n * 2000 + effectiveU * (n-1) + lS + rS;
   document.getElementById('maguchi').value = newMaguchi;
