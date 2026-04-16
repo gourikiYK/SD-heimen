@@ -75,6 +75,7 @@ canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width
   </div>
   <div class="grid3">
     <div class="field"><label>後スキマ (mm)</label><input type="number" id="ushiro" value="1000" step="0.1"></div>
+    <div class="field"><label>ライン太さ (mm)</label><input type="number" id="linewidth" value="100" step="10" min="10"></div>
   </div>
   <button class="reset-btn" id="resetBtn">↩ デフォルトに戻す</button>
   <button class="reset-btn" id="saveBtn" style="margin-left:8px;">📥 図をPNGで保存</button>
@@ -181,22 +182,33 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(rSx, pitY); ctx.lineTo(rSx, pitY+pitH); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(pitX, ushiroSy); ctx.lineTo(pitX+pitW, ushiroSy); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(pitX, maeSy); ctx.lineTo(pitX+pitW, maeSy); ctx.stroke();
+  // U字幅（スキマ）の左右に点線
+  for (var k = 0; k < n-1; k++) {
+    var gS = lS + (k+1)*ku + k*effectiveU;
+    var gx1 = pitX + gS*scale;
+    var gx2 = pitX + (gS + effectiveU)*scale;
+    ctx.beginPath(); ctx.moveTo(gx1, pitY); ctx.lineTo(gx1, pitY+pitH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx2, pitY); ctx.lineTo(gx2, pitY+pitH); ctx.stroke();
+  }
   ctx.setLineDash([]);
 
   var lineColor = '#e07820';
-  var lineW = Math.max(1.5, 100*scale*0.15);
+  var lineW = Math.min(Math.max(1, +document.getElementById('linewidth').value * scale), ku * scale);
+  var half = lineW / 2; // ラインの半幅
 
   if (pat === 'U字') {
-    var ends = [lS, L-rS];
-    for (var e = 0; e < ends.length; e++) {
-      var cx = pitX + ends[e]*scale;
-      ctx.strokeStyle = lineColor; ctx.lineWidth = lineW;
-      ctx.beginPath(); ctx.moveTo(cx, ushiroSy); ctx.lineTo(cx, maeSy); ctx.stroke();
-    }
+    // 左端ライン: 左スキマ点線の左側 (cx = lSx - half)
+    ctx.strokeStyle = lineColor; ctx.lineWidth = lineW;
+    ctx.beginPath(); ctx.moveTo(lSx - half, ushiroSy); ctx.lineTo(lSx - half, maeSy); ctx.stroke();
+    // 右端ライン: 右スキマ点線の右側 (cx = rSx + half)
+    ctx.beginPath(); ctx.moveTo(rSx + half, ushiroSy); ctx.lineTo(rSx + half, maeSy); ctx.stroke();
+
+    // 中間U字: 各スキマ内に収める
     for (var k = 0; k < n-1; k++) {
       var gS = lS + (k+1)*ku + k*effectiveU;
-      var lx = pitX + gS*scale, rx = pitX + (gS+effectiveU)*scale;
-      var r = Math.max(6, (effectiveU*scale)/2);
+      var lx = pitX + gS*scale + half;           // 左足: スキマ左端+half
+      var rx = pitX + (gS+effectiveU)*scale - half; // 右足: スキマ右端-half
+      var r = Math.max(lineW, (rx - lx) / 2);
       var botY = maeSy - r;
       ctx.strokeStyle = lineColor; ctx.lineWidth = lineW; ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -288,10 +300,11 @@ function resetDefaults() {
   document.getElementById('migi').value = 250;
   document.getElementById('mae').value = 200;
   document.getElementById('ushiro').value = 1000;
+  document.getElementById('linewidth').value = 100;
   draw();
 }
 
-var ids = ['maguchi','okuyuki','pattern','ujihaba','hidari','migi','mae','ushiro'];
+var ids = ['maguchi','okuyuki','pattern','ujihaba','hidari','migi','mae','ushiro','linewidth'];
 for (var i = 0; i < ids.length; i++) {
   document.getElementById(ids[i]).addEventListener('input', draw);
 }
