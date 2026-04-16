@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>駐車場ラインプランナー</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1b2a;
+  --bg2:#152236;
+  --bg3:#1c2e44;
+  --text:#e8edf2;
+  --text2:#8fa8c0;
+  --border:#2a3f58;
+  --accent:#3a8fd4;
+  --accent2:#1d6faa;
+}
+body{font-family:'Hiragino Sans','Meiryo',sans-serif;color:var(--text);background:var(--bg);min-height:100vh}
+.wrap{padding:1rem;max-width:900px;margin:0 auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.card{background:var(--bg2);border:.5px solid var(--border);border-radius:10px;padding:1rem 1.25rem;margin-bottom:12px}
+.sec-title{font-size:13px;font-weight:500;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.field label{font-size:12px;color:var(--text2)}
+.field input,.field select{width:100%;height:36px;padding:0 10px;border:.5px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-size:14px}
+.field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.metric{background:var(--bg2);border:.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.metric .lbl{font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.metric .val{font-size:20px;font-weight:600;color:var(--accent)}
+.canvas-wrap{display:flex;justify-content:center;margin-bottom:12px}
+canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width:100%}
+.warn{font-size:13px;color:#e05555;margin-top:4px;margin-bottom:8px}
+.top-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:.5px solid var(--border)}
+.reset-btn{height:34px;padding:0 16px;border:.5px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer;letter-spacing:.03em}
+.reset-btn:hover{border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top-bar">
+  <img src="https://gouriki.co.jp/wp-content/themes/gouriki-hp/smart-deck/images/smartdeck_logo_wht.svg" alt="SMART DECK" style="height:28px;width:auto;">
+</div>
+
+<div class="card">
+  <p class="sec-title">基本寸法</p>
+  <div class="grid2">
+    <div class="field"><label>ピット間口 (mm)</label><input type="number" id="maguchi" value="10000" step="0.1"></div>
+    <div class="field"><label>ピット奥行き (mm)</label><input type="number" id="okuyuki" value="5200" step="0.1"></div>
+  </div>
+</div>
+
+<div class="card">
+  <p class="sec-title">ライン設定</p>
+  <div class="grid3">
+    <div class="field"><label>連数</label>
+      <select id="rensuu">
+        <option value="1">1連</option><option value="2">2連</option><option value="3">3連</option>
+        <option value="4" selected>4連</option><option value="5">5連</option><option value="6">6連</option>
+        <option value="7">7連</option><option value="8">8連</option><option value="9">9連</option>
+        <option value="10">10連</option><option value="11">11連</option><option value="12">12連</option>
+      </select>
+    </div>
+    <div class="field"><label>ラインパターン</label>
+      <select id="pattern"><option value="U字">U字</option><option value="I字">I字</option></select>
+    </div>
+    <div class="field" id="ujihaba-field"><label>U字幅 (mm)</label><input type="number" id="ujihaba" value="500" step="0.1"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>左スキマ (mm)</label><input type="number" id="hidari" value="250" step="0.1"></div>
+    <div class="field"><label>右スキマ (mm)</label><input type="number" id="migi" value="250" step="0.1"></div>
+    <div class="field"><label>前スキマ (mm)</label><input type="number" id="mae" value="200" step="0.1"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>後スキマ (mm)</label><input type="number" id="ushiro" value="1000" step="0.1"></div>
+  </div>
+  <button class="reset-btn" id="resetBtn">↩ デフォルトに戻す</button>
+  <button class="reset-btn" id="saveBtn" style="margin-left:8px;">📥 図をPNGで保存</button>
+</div>
+
+<div id="warn" class="warn" style="display:none"></div>
+<div id="metrics" class="metric-grid"></div>
+<div class="canvas-wrap"><canvas id="cv"></canvas></div>
+</div>
+
+<script>
+(function() {
+
+function fmt(v) {
+  var r = Math.round(v * 10) / 10;
+  return (r % 1 === 0) ? r.toString() : r.toFixed(1);
+}
+
+function dimSeg(ctx, xA, xB, y, label, color) {
+  color = color || '#8fa8c0';
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(xA, y-4); ctx.lineTo(xA, y+4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(xB, y-4); ctx.lineTo(xB, y+4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(xA, y); ctx.lineTo(xB, y); ctx.stroke();
+  var ah = 4;
+  if (xB - xA > ah * 3) {
+    ctx.beginPath(); ctx.moveTo(xA,y); ctx.lineTo(xA+ah,y-ah/2); ctx.lineTo(xA+ah,y+ah/2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(xB,y); ctx.lineTo(xB-ah,y-ah/2); ctx.lineTo(xB-ah,y+ah/2); ctx.closePath(); ctx.fill();
+  }
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, (xA+xB)/2, y+11);
+}
+
+function draw() {
+  var L = +document.getElementById('maguchi').value;
+  var D = +document.getElementById('okuyuki').value;
+  var n = +document.getElementById('rensuu').value;
+  var pat = document.getElementById('pattern').value;
+  var U = +document.getElementById('ujihaba').value;
+  var lS = +document.getElementById('hidari').value;
+  var rS = +document.getElementById('migi').value;
+  var maeS = +document.getElementById('mae').value;
+  var ushiroS = +document.getElementById('ushiro').value;
+  var wall = 250;
+  var effectiveU = (pat === 'I字') ? 100 : U;
+  var ku = (L - lS - rS - effectiveU * (n-1)) / n;
+
+  var warnEl = document.getElementById('warn');
+  if (ku <= 0) {
+    warnEl.style.display = 'block';
+    warnEl.textContent = '区画幅が0以下になっています。連数またはスキマを調整してください。';
+    return;
+  }
+  warnEl.style.display = 'none';
+
+  document.getElementById('metrics').innerHTML =
+    '<div class="metric"><div class="lbl">区画幅</div><div class="val">' + fmt(ku) + '<span style="font-size:12px;font-weight:400;color:var(--text2)"> mm</span></div></div>' +
+    '<div class="metric"><div class="lbl">ライン間隔</div><div class="val">' + fmt(ku+effectiveU) + '<span style="font-size:12px;font-weight:400;color:var(--text2)"> mm</span></div></div>' +
+    '<div class="metric"><div class="lbl">ライン本数</div><div class="val">' + (n+1) + '<span style="font-size:12px;font-weight:400;color:var(--text2)"> 本</span></div></div>' +
+    '<div class="metric"><div class="lbl">連数</div><div class="val">' + n + '<span style="font-size:12px;font-weight:400;color:var(--text2)"> 連</span></div></div>';
+
+  var cv = document.getElementById('cv');
+  var marginL=70, marginR=50, marginT=20, marginB=60;
+  var maxW = Math.min(860, cv.parentElement.offsetWidth - 2);
+  var wall2 = wall * 2;
+  var totalW = L + wall2, totalD = D + wall2;
+  var scale = Math.min((maxW - marginL - marginR) / totalW, 350 / totalD);
+  cv.width = Math.round(totalW * scale) + marginL + marginR;
+  cv.height = Math.round(totalD * scale) + marginT + marginB;
+
+  var ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  var ox = marginL, oy = marginT;
+  var outerW = Math.round(totalW*scale), outerH = Math.round(totalD*scale);
+  var pitX = ox + wall*scale, pitY = oy + wall*scale;
+  var pitW = L*scale, pitH = D*scale;
+
+  // outer frame
+  ctx.fillStyle = '#c8c8c8';
+  ctx.fillRect(ox, oy, outerW, outerH);
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+  ctx.strokeRect(ox, oy, outerW, outerH);
+
+  // pit
+  ctx.fillStyle = '#dde8f0';
+  ctx.fillRect(pitX, pitY, pitW, pitH);
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(pitX, pitY, pitW, pitH);
+
+  // stripes
+  ctx.fillStyle = 'rgba(180,210,230,0.3)';
+  var sH = Math.max(3, pitH/20);
+  for (var sy = pitY; sy < pitY+pitH; sy += sH*2) ctx.fillRect(pitX, sy, pitW, sH);
+
+  var lSx = pitX + lS*scale, rSx = pitX + (L-rS)*scale;
+  var ushiroSy = pitY + ushiroS*scale, maeSy = pitY + pitH - maeS*scale;
+
+  // guide dashes
+  ctx.strokeStyle = '#aaa'; ctx.setLineDash([4,3]); ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(lSx, pitY); ctx.lineTo(lSx, pitY+pitH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rSx, pitY); ctx.lineTo(rSx, pitY+pitH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pitX, ushiroSy); ctx.lineTo(pitX+pitW, ushiroSy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pitX, maeSy); ctx.lineTo(pitX+pitW, maeSy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  var lineColor = '#e07820';
+  var lineW = Math.max(1.5, 100*scale*0.15);
+
+  if (pat === 'U字') {
+    var ends = [lS, L-rS];
+    for (var e = 0; e < ends.length; e++) {
+      var cx = pitX + ends[e]*scale;
+      ctx.strokeStyle = lineColor; ctx.lineWidth = lineW;
+      ctx.beginPath(); ctx.moveTo(cx, ushiroSy); ctx.lineTo(cx, maeSy); ctx.stroke();
+    }
+    for (var k = 0; k < n-1; k++) {
+      var gS = lS + (k+1)*ku + k*effectiveU;
+      var lx = pitX + gS*scale, rx = pitX + (gS+effectiveU)*scale;
+      var r = Math.max(6, (effectiveU*scale)/2);
+      var botY = maeSy - r;
+      ctx.strokeStyle = lineColor; ctx.lineWidth = lineW; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(lx, ushiroSy); ctx.lineTo(lx, botY);
+      ctx.arcTo(lx, botY+r, lx+r, botY+r, r);
+      ctx.arcTo(rx, botY+r, rx, botY, r);
+      ctx.lineTo(rx, ushiroSy);
+      ctx.stroke();
+    }
+  } else {
+    var allPos = [lS];
+    for (var k = 0; k < n-1; k++) allPos.push(lS + (k+1)*ku + k*effectiveU + effectiveU/2);
+    allPos.push(L-rS);
+    for (var i = 0; i < allPos.length; i++) {
+      var cx = pitX + allPos[i]*scale;
+      ctx.strokeStyle = lineColor; ctx.lineWidth = lineW;
+      ctx.beginPath(); ctx.moveTo(cx, ushiroSy); ctx.lineTo(cx, maeSy); ctx.stroke();
+    }
+  }
+
+  // car stops
+  for (var k = 0; k < n; k++) {
+    var sLx = pitX + (lS + k*(ku+effectiveU))*scale;
+    var sRx = pitX + (lS + k*(ku+effectiveU)+ku)*scale;
+    var off = 50*scale, sw = 560*scale, sh = 160*scale;
+    var cx1 = sLx + off + sw/2, cx2 = sRx - off - sw/2;
+    [cx1, cx2].forEach(function(cx) {
+      var sx = cx - sw/2;
+      ctx.fillStyle = '#111';
+      ctx.fillRect(sx, ushiroSy, sw, sh);
+      ctx.strokeStyle = '#e6c200';
+      ctx.lineWidth = Math.max(1.5, sh*0.12);
+      ctx.beginPath(); ctx.moveTo(sx+sw*0.08, ushiroSy+sh*0.62); ctx.lineTo(sx+sw*0.92, ushiroSy+sh*0.62); ctx.stroke();
+    });
+  }
+
+  // dimensions
+  ctx.setLineDash([]);
+  var dimY1 = pitY + pitH + 18;
+  var curX = pitX;
+  dimSeg(ctx, curX, curX+lS*scale, dimY1, fmt(lS), '#555'); curX += lS*scale;
+  for (var k = 0; k < n; k++) {
+    dimSeg(ctx, curX, curX+ku*scale, dimY1, fmt(ku), '#1a6b9e'); curX += ku*scale;
+    if (k < n-1) { dimSeg(ctx, curX, curX+effectiveU*scale, dimY1, fmt(effectiveU), '#c87000'); curX += effectiveU*scale; }
+  }
+  dimSeg(ctx, curX, pitX+pitW, dimY1, fmt(rS), '#555');
+
+  var dimY2 = dimY1 + 22;
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(pitX, pitY+pitH+6); ctx.lineTo(pitX, dimY2+6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pitX+pitW, pitY+pitH+6); ctx.lineTo(pitX+pitW, dimY2+6); ctx.stroke();
+  dimSeg(ctx, pitX, pitX+pitW, dimY2, 'ピット間口 ' + fmt(L), '#222');
+
+  var ah = 4, dX = ox - 12;
+  ctx.strokeStyle = '#222'; ctx.fillStyle = '#222'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(dX, pitY); ctx.lineTo(dX, pitY+pitH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dX,pitY); ctx.lineTo(dX-ah/2,pitY+ah); ctx.lineTo(dX+ah/2,pitY+ah); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(dX,pitY+pitH); ctx.lineTo(dX-ah/2,pitY+pitH-ah); ctx.lineTo(dX+ah/2,pitY+pitH-ah); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.translate(dX-10, pitY+pitH/2); ctx.rotate(-Math.PI/2);
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#222';
+  ctx.fillText('ピット奥行き ' + fmt(D), 0, 0);
+  ctx.restore();
+
+  // 後スキマ寸法（右側）
+  var dX2 = ox + outerW + 12;
+  ctx.strokeStyle = '#555'; ctx.fillStyle = '#555'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(dX2, pitY); ctx.lineTo(dX2, ushiroSy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dX2,pitY); ctx.lineTo(dX2-ah/2,pitY+ah); ctx.lineTo(dX2+ah/2,pitY+ah); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(dX2,ushiroSy); ctx.lineTo(dX2-ah/2,ushiroSy-ah); ctx.lineTo(dX2+ah/2,ushiroSy-ah); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(pitX+pitW, pitY); ctx.lineTo(dX2+4, pitY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pitX+pitW, ushiroSy); ctx.lineTo(dX2+4, ushiroSy); ctx.stroke();
+  ctx.save(); ctx.translate(dX2+10, pitY + ushiroS*scale/2); ctx.rotate(-Math.PI/2);
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#555';
+  ctx.fillText('後スキマ ' + fmt(ushiroS), 0, 0);
+  ctx.restore();
+}
+
+function resetDefaults() {
+  document.getElementById('maguchi').value = 10000;
+  document.getElementById('okuyuki').value = 5200;
+  document.getElementById('rensuu').value = 4;
+  document.getElementById('pattern').value = 'U字';
+  document.getElementById('ujihaba').value = 500;
+  document.getElementById('ujihaba-field').style.display = '';
+  document.getElementById('hidari').value = 250;
+  document.getElementById('migi').value = 250;
+  document.getElementById('mae').value = 200;
+  document.getElementById('ushiro').value = 1000;
+  draw();
+}
+
+var ids = ['maguchi','okuyuki','pattern','ujihaba','hidari','migi','mae','ushiro'];
+for (var i = 0; i < ids.length; i++) {
+  document.getElementById(ids[i]).addEventListener('input', draw);
+}
+document.getElementById('rensuu').addEventListener('change', function() {
+  var n = +this.value;
+  var lS = +document.getElementById('hidari').value;
+  var rS = +document.getElementById('migi').value;
+  var pat = document.getElementById('pattern').value;
+  var effectiveU = (pat === 'I字') ? 100 : +document.getElementById('ujihaba').value;
+  // 区画幅2000固定で間口を自動計算
+  var newMaguchi = n * 2000 + effectiveU * (n-1) + lS + rS;
+  document.getElementById('maguchi').value = newMaguchi;
+  draw();
+});
+document.getElementById('pattern').addEventListener('change', function() {
+  document.getElementById('ujihaba-field').style.display = (this.value === 'I字') ? 'none' : '';
+  draw();
+});
+document.getElementById('resetBtn').addEventListener('click', resetDefaults);
+document.getElementById('saveBtn').addEventListener('click', function() {
+  var cv = document.getElementById('cv');
+  var a = document.createElement('a');
+  a.href = cv.toDataURL('image/png');
+  a.download = 'parking_plan.png';
+  a.click();
+});
+window.addEventListener('resize', draw);
+window.addEventListener('load', function() { setTimeout(draw, 50); });
+
+})();
+</script>
+</body>
+</html>
