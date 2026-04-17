@@ -1,4 +1,3 @@
-
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0d1b2a;--bg2:#152236;--bg3:#1c2e44;--text:#e8edf2;--text2:#8fa8c0;--border:#2a3f58;--accent:#3a8fd4}
@@ -367,16 +366,66 @@ function build3D(){
     var allPos=[lS,L-rS];for(var k=0;k<n-1;k++)allPos.push(lS+(k+1)*ku+k*eU+eU/2);
     allPos.forEach(function(pos,i){var lx4=(i===0)?pitOX+pos*sc-lwSc:(i===1)?pitOX+pos*sc:pitOX+pos*sc-lwSc/2;addLine(lx4,ushZ,lwSc,maeZ-ushZ);});
   }
-  var bm=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.6}),fm=new THREE.MeshStandardMaterial({color:0x333333,roughness:0.6}),rm=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.2,metalness:0.3,emissive:0x332200}),hm=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.1,transparent:true,opacity:0.4});
-  var sw=560*sc,sd=160*sc,off2=50*sc;
+  // パーキングラバー形状（OBJファイルより）
+  // 実寸：幅160mm(X±80), 高さ110mm(Y), 長さ560mm(Z±280)
+  // 断面：底部Y=0でX±80, Y=45まで垂直, その後傾斜してY=110でX±27
+  function makeRubberStopperGeo(length){
+    // 断面形状（XY平面、mmスケール原寸）
+    // 底部±80mm幅, Y=45まで垂直, Y=45〜110は傾斜して頂部±27mm
+    var shape=new THREE.Shape();
+    shape.moveTo( 80,  0);
+    shape.lineTo( 80, 45);
+    shape.lineTo( 27,110);
+    shape.lineTo(-27,110);
+    shape.lineTo(-80, 45);
+    shape.lineTo(-80,  0);
+    shape.lineTo( 80,  0);
+    // depthはZ方向の長さ（mm原寸560を後でscaleする前のlength=1を使う）
+    var extrudeSettings={depth:1, bevelEnabled:false};
+    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  }
+
+  // パーキングラバー実寸（mm）
+  var prW=160, prH=110, prL=560;
+  var rubberMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.75,metalness:0.05});
+  // 黄色反射テープ部分（上面の帯）
+  var tapeMat=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.35,metalness:0.2,emissive:0x221a00});
+
+  var prLen=prL*sc;   // 560mm→Three.js単位
+  var prWsc=prW*sc;   // 160mm→Three.js単位
+  var prHsc=prH*sc;   // 110mm→Three.js単位
+  var off2=50*sc;     // ラインからのオフセット（元コードと同じ）
+
   for(var k=0;k<n;k++){
-    var sLx=pitOX+(lS+k*(ku+eU))*sc,sRx=pitOX+(lS+k*(ku+eU)+ku)*sc;
-    [sLx+off2+sw/2,sRx-off2-sw/2].forEach(function(cx){
-      var body=new THREE.Mesh(new THREE.BoxGeometry(sw,lineH3,sd),bm);body.position.set(cx,baseY+lineH3/2,ushZ+sd/2);scene.add(body);
-      var rw=sw*0.75,rh=sd*0.28,rt=lineH3*0.8;
-      var fr=new THREE.Mesh(new THREE.BoxGeometry(rw+0.006,rt,rh+0.006),fm);fr.position.set(cx,baseY+lineH3+rt/2,ushZ+sd*0.5);scene.add(fr);
-      var rl=new THREE.Mesh(new THREE.BoxGeometry(rw,rt,rh),rm);rl.position.set(cx,baseY+lineH3+rt/2,ushZ+sd*0.5);scene.add(rl);
-      var hl2=new THREE.Mesh(new THREE.BoxGeometry(rw*0.9,rt*0.4,rh*0.4),hm);hl2.position.set(cx,baseY+lineH3+rt,ushZ+sd*0.38);scene.add(hl2);
+    var sLx=pitOX+(lS+k*(ku+eU))*sc, sRx=pitOX+(lS+k*(ku+eU)+ku)*sc;
+    // 各区画に2本（区画左側・区画右側）
+    // 元コードと同じ：sLx+off2+prLen/2 と sRx-off2-prLen/2
+    [sLx+off2+prLen/2, sRx-off2-prLen/2].forEach(function(cx){
+      // パーキングラバー本体（台形断面を長手方向に押し出し）
+      // ExtrudeGeometryはXY断面をZ方向に押し出す
+      // 長手方向をX軸に沿わせたいので rotation.y=+PI/2 で90度回転
+      // 断面XY座標はmmスケール→そのままprScで換算
+      var rubberGeo=makeRubberStopperGeo(prLen);
+      // ジオメトリ原点調整：
+      //   Extrude後: X=-80*sc〜+80*sc, Y=0〜110*sc, Z=0〜prLen
+      //   → Z軸中央に移動 (Z: 0〜prLen → -prLen/2〜+prLen/2)
+      //   → X軸はX=0が中央なのでそのまま
+      //   スケールをscで縮小（mm→Three.js単位）
+      rubberGeo.scale(sc, sc, prLen); // XY断面をsc倍、Z方向をprLen（=560*sc）に
+      rubberGeo.translate(0, 0, -prLen/2); // Z中央寄せ
+
+      var rubber=new THREE.Mesh(rubberGeo, rubberMat);
+      // Z押し出し方向をX軸に変換（rotation.y=-PI/2でZ→X）
+      rubber.rotation.y=-Math.PI/2;
+      // 位置：床面上、ushZ位置
+      rubber.position.set(cx, baseY, ushZ+prWsc/2);
+      scene.add(rubber);
+
+      // 反射テープ（頂部の黄色帯）
+      var tapeW=prLen*0.7, tapeD=prWsc*0.45, tapeH=0.004;
+      var tapeMesh=new THREE.Mesh(new THREE.BoxGeometry(tapeW, tapeH, tapeD), tapeMat);
+      tapeMesh.position.set(cx, baseY+prHsc, ushZ+prWsc/2);
+      scene.add(tapeMesh);
     });
   }
   rad=Math.max(totalW,totalD)*3.2+wallH*1.5+4;updateCam();
