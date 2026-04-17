@@ -1,7 +1,7 @@
 <head>
   <meta charset="UTF-8">
   <title>スマートデッキ 平面図作成ツール</title>
-  <link rel="icon" href="/favicon.ico?v=2">
+  <link rel="icon" href="/SmartDeck/favicon.ico" type="image/x-icon">
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -59,7 +59,7 @@ canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width
 </head>
 <div class="wrap">
 <div class="top-bar">
-        <img src="/logo.png">
+        <img src="/SmartDeck/logo.png" alt="SmartDeck">
 </div>
 <div class="view-toggle">
   <button class="vbtn active" id="btn2d" onclick="setView('2d')">2D 平面図</button>
@@ -258,58 +258,83 @@ function makeConcreteTexture(){
   var tex=new THREE.CanvasTexture(can);tex.wrapS=THREE.RepeatWrapping;tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(2,3);return tex;
 }
 
-// 車を作る：cW/cD/cHはすべてmm実寸×sc
-// タイヤは車体幅の内側に完全に収める
 function makeCar3D(typeIdx, colorHex, sc){
   var t=CAR_TYPES[typeIdx];
   var cW=t.W*sc, cD=t.D*sc, cH=t.H*sc;
+
   var g=new THREE.Group();
   var mat=new THREE.MeshStandardMaterial({color:colorHex,roughness:0.35,metalness:0.4});
 
-  // 車体下部（フル幅・フル奥行き）
+  // タイヤサイズ
+  var tR=cH*0.13;
+  var tW=cW*0.11;
+
+  // ★ここが重要（車体を持ち上げる）
+  var lift = tR * 1.05;
+
+  // ===== 車体下部 =====
   var loH=cH*(1-t.roofRatio);
   var lo=new THREE.Mesh(new THREE.BoxGeometry(cW,loH,cD),mat);
-  lo.position.y=loH/2; g.add(lo);
+  lo.position.y = loH/2 + lift;
+  g.add(lo);
 
-  // キャビン（車体幅より少し狭く）
+  // ===== キャビン =====
   var cabW=cW*0.94,cabH=cH*t.roofRatio,cabD=cD*t.cabinDRatio;
   var cabZOff=cD*t.cabinZOff;
   var cab=new THREE.Mesh(new THREE.BoxGeometry(cabW,cabH,cabD),mat);
-  cab.position.set(0,loH+cabH/2,cabZOff); g.add(cab);
+  cab.position.set(0, loH + cabH/2 + lift, cabZOff);
+  g.add(cab);
 
-  // フロントガラス（Z正=前）
-  var glassMat=new THREE.MeshStandardMaterial({color:0x99ccee,transparent:true,opacity:0.55,roughness:0.05});
+  // ===== ガラス =====
+  var glassMat=new THREE.MeshStandardMaterial({color:0x99ccee,transparent:true,opacity:0.55});
+
   var fg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.88,cabH*0.7,0.01),glassMat);
-  fg.position.set(0,loH+cabH*0.5,cabZOff+cabD/2); g.add(fg);
-  // リアガラス（Z負=後）
-  var rg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.82,cabH*0.62,0.01),glassMat);
-  rg.position.set(0,loH+cabH*0.5,cabZOff-cabD/2); g.add(rg);
+  fg.position.set(0, loH + cabH*0.5 + lift, cabZOff + cabD/2);
+  g.add(fg);
 
-  // タイヤ：車体幅cWの内側に収める
-  // タイヤ幅tW = cW * 0.12（車体幅の12%）
-  // タイヤ外端X = ±(cW/2 - 数mm余白)
-  // タイヤ中心X = ±(cW/2 - tW/2 - 小余白)
-  var tR=cH*0.13;  // タイヤ半径
-  var tW=cW*0.11;  // タイヤ幅
-  var tCX=(cW/2-tW/2-cW*0.01); // タイヤ中心X（車体内側に収まる）
+  var rg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.82,cabH*0.62,0.01),glassMat);
+  rg.position.set(0, loH + cabH*0.5 + lift, cabZOff - cabD/2);
+  g.add(rg);
+
+  // ===== タイヤ（接地そのまま）=====
+  var tCX=(cW/2 - tW/2 - cW*0.01);
   var tireMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.9});
-  var rimMat=new THREE.MeshStandardMaterial({color:0xb0b0b0,roughness:0.3,metalness:0.7});
+  var rimMat=new THREE.MeshStandardMaterial({color:0xb0b0b0,metalness:0.7});
+
   [[-tCX,tR,cD*0.32],[tCX,tR,cD*0.32],[-tCX,tR,-cD*0.3],[tCX,tR,-cD*0.3]].forEach(function(pos){
     var tire=new THREE.Mesh(new THREE.CylinderGeometry(tR,tR,tW,20),tireMat);
-    tire.rotation.z=Math.PI/2;tire.position.set(pos[0],pos[1],pos[2]);g.add(tire);
+    tire.rotation.z=Math.PI/2;
+    tire.position.set(pos[0], pos[1], pos[2]); // ←ここはそのまま
+    g.add(tire);
+
     var rim=new THREE.Mesh(new THREE.CylinderGeometry(tR*0.58,tR*0.58,tW+0.002,12),rimMat);
-    rim.rotation.z=Math.PI/2;rim.position.set(pos[0],pos[1],pos[2]);g.add(rim);
+    rim.rotation.z=Math.PI/2;
+    rim.position.set(pos[0], pos[1], pos[2]);
+    g.add(rim);
   });
 
-  // テールライト（Z負=後部）
-  var tailMat=new THREE.MeshStandardMaterial({color:0xff2200,roughness:0.1,emissive:0x550000});
-  [-1,1].forEach(function(s){var tl=new THREE.Mesh(new THREE.BoxGeometry(cW*0.13,cH*0.07,0.015),tailMat);tl.position.set(s*cW*0.34,loH*0.65,-cD/2);g.add(tl);});
-  // ヘッドライト（Z正=前部）
-  var headMat=new THREE.MeshStandardMaterial({color:0xffffdd,roughness:0.05,emissive:0x222200});
-  [-1,1].forEach(function(s){var hl=new THREE.Mesh(new THREE.BoxGeometry(cW*0.13,cH*0.06,0.015),headMat);hl.position.set(s*cW*0.34,loH*0.62,cD/2);g.add(hl);});
-  // ナンバープレート（後部）
-  var plate=new THREE.Mesh(new THREE.BoxGeometry(cW*0.28,cH*0.045,0.01),new THREE.MeshStandardMaterial({color:0xeeeeff,roughness:0.5}));
-  plate.position.set(0,loH*0.38,-cD/2);g.add(plate);
+  // ===== ライト =====
+  var tailMat=new THREE.MeshStandardMaterial({color:0xff2200,emissive:0x550000});
+  [-1,1].forEach(function(s){
+    var tl=new THREE.Mesh(new THREE.BoxGeometry(cW*0.13,cH*0.07,0.015),tailMat);
+    tl.position.set(s*cW*0.34, loH*0.65 + lift, -cD/2);
+    g.add(tl);
+  });
+
+  var headMat=new THREE.MeshStandardMaterial({color:0xffffdd,emissive:0x222200});
+  [-1,1].forEach(function(s){
+    var hl=new THREE.Mesh(new THREE.BoxGeometry(cW*0.13,cH*0.06,0.015),headMat);
+    hl.position.set(s*cW*0.34, loH*0.62 + lift, cD/2);
+    g.add(hl);
+  });
+
+  // ===== ナンバー =====
+  var plate=new THREE.Mesh(
+    new THREE.BoxGeometry(cW*0.28,cH*0.045,0.01),
+    new THREE.MeshStandardMaterial({color:0xeeeeff})
+  );
+  plate.position.set(0, loH*0.38 + lift, -cD/2);
+  g.add(plate);
 
   return g;
 }
