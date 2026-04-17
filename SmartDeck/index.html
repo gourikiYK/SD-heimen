@@ -233,8 +233,25 @@ function draw2D(){
     var sLx2=pitX+(lS+k*(ku+eU))*scale,sRx2=pitX+(lS+k*(ku+eU)+ku)*scale;
     var off=50*scale,sw2=560*scale,sh2=160*scale;
     [sLx2+off+sw2/2,sRx2-off-sw2/2].forEach(function(cx){
-      var sx=cx-sw2/2,sy2=ushiroSy;ctx.fillStyle='#111';ctx.fillRect(sx,sy2,sw2,sh2);
-      var rw=sw2*0.75,rh=sh2*0.28,rx2=cx-rw/2,ry2=sy2+sh2*0.36;ctx.fillStyle='#333';ctx.fillRect(rx2-1,ry2-1,rw+2,rh+2);ctx.fillStyle='#f5c200';ctx.fillRect(rx2,ry2,rw,rh);ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillRect(rx2,ry2,rw,rh*0.35);
+      // 車止め本体(黒)
+      var sx=cx-sw2/2,sy2=ushiroSy;
+      ctx.fillStyle='#111';ctx.fillRect(sx,sy2,sw2,sh2);
+      // 反射板(黄色)：3Dと同様に前スキマ側の斜面上に配置
+      // 車止め奥行160mmのうち、前スキマ側は斜面部分(53mm幅: 80→27mm)
+      // 反射板は斜面の75%幅(約40mm)を占め、斜面中央に配置
+      // 車止め前スキマ側端=sy2+sh2, 斜面範囲=(sy2+sh2-53mm)〜(sy2+sh2-0mm)の投影
+      var rw=sw2*0.72;                          // 長手方向: 3Dのtapeと同じ72%
+      var rh=sh2*(40/160);                      // 奥行方向: 40mm相当(斜面の75%)
+      var rx2=cx-rw/2;
+      // 斜面中央のY位置: 前スキマ側端から(53+27)/2=40mm内側を投影した位置
+      // = sy2+sh2 - ((80+27)/2 - 0)*(sh2/160) = sy2+sh2 - 53.5*(sh2/160)
+      var ry2=sy2+sh2 - 53.5*(sh2/160) - rh/2;
+      // 黒縁取り
+      ctx.fillStyle='#333';ctx.fillRect(rx2-1,ry2-1,rw+2,rh+2);
+      // 黄色反射面
+      ctx.fillStyle='#f5c200';ctx.fillRect(rx2,ry2,rw,rh);
+      // ハイライト(前スキマ側に光沢を強調)
+      ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillRect(rx2,ry2,rw,rh*0.4);
     });
   }
   ctx.setLineDash([]);
@@ -353,9 +370,13 @@ window.placeCar=function(){
   var carCX=pitOX+(p.lS+p.ku/2)*sc;
   var t=CAR_TYPES[selectedCar];
   var cD=t.D*sc,tR=t.H*sc*0.13;
-  // 後タイヤ中心Z = stopZ - cD*0.3
-  // 後タイヤ後端 = 後タイヤ中心Z - tR = ushZ → stopZ = ushZ + tR + cD*0.3
-  stopZ=ushZ+tR+cD*0.3;
+  // 車止め実寸160mm → 車止めは ushZ〜ushZ+prWsc の範囲
+  var prWsc=160*sc;
+  // タイヤが車止めの前スキマ側の垂直壁に当たって停止するように:
+  //   後タイヤ後端 = ushZ + prWsc (車止めの前面)
+  //   後タイヤ中心Z = stopZ - cD*0.3
+  //   → stopZ = ushZ + prWsc + tR + cD*0.3
+  stopZ=ushZ+prWsc+tR+cD*0.3;
   carGroup=makeCar3D(selectedCar,CAR_COLORS[selectedColor],sc);
   carGroup.position.set(carCX,baseY,maeZ+cD*1.2);
   scene.add(carGroup);
@@ -405,8 +426,6 @@ function build3D(){
   // 実寸：幅160mm(X±80), 高さ110mm(Y), 長さ560mm(Z±280)
   // 断面：底部Y=0でX±80, Y=45まで垂直, その後傾斜してY=110でX±27
   function makeRubberStopperGeo(length){
-    // 断面形状（XY平面、mmスケール原寸）
-    // 底部±80mm幅, Y=45まで垂直, Y=45〜110は傾斜して頂部±27mm
     var shape=new THREE.Shape();
     shape.moveTo( 80,  0);
     shape.lineTo( 80, 45);
@@ -415,7 +434,6 @@ function build3D(){
     shape.lineTo(-80, 45);
     shape.lineTo(-80,  0);
     shape.lineTo( 80,  0);
-    // depthはZ方向の長さ（mm原寸560を後でscaleする前のlength=1を使う）
     var extrudeSettings={depth:1, bevelEnabled:false};
     return new THREE.ExtrudeGeometry(shape, extrudeSettings);
   }
@@ -423,43 +441,63 @@ function build3D(){
   // パーキングラバー実寸（mm）
   var prW=160, prH=110, prL=560;
   var rubberMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.75,metalness:0.05});
-  // 黄色反射テープ部分（上面の帯）
-  var tapeMat=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.35,metalness:0.2,emissive:0x221a00});
+  // 黄色反射テープ（斜面に面合わせ: PlaneGeometryで斜面と同じ平面に配置）
+  var tapeMat=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.35,metalness:0.2,emissive:0x332100,side:THREE.DoubleSide});
 
-  var prLen=prL*sc;   // 560mm→Three.js単位
-  var prWsc=prW*sc;   // 160mm→Three.js単位
-  var prHsc=prH*sc;   // 110mm→Three.js単位
-  var off2=50*sc;     // ラインからのオフセット（元コードと同じ）
+  var prLen=prL*sc;
+  var prWsc=prW*sc;
+  var prHsc=prH*sc;
+  var off2=50*sc;
+
+  // ========= 反射テープ配置の幾何学 =========
+  // 斜面: OBJ断面で (X=80,Y=45)→(X=27,Y=110)  [前スキマ側=ワールド+Z側]
+  // 斜面の鉛直からの傾斜角
+  var slopeAngle = Math.atan2(80-27, 110-45);        // ≈ 39.2°
+  // 斜面の長さ(mm)
+  var slopeLenMM = Math.sqrt((80-27)*(80-27)+(110-45)*(110-45));
+  // 斜面中点(OBJローカル断面座標)
+  var slopeMidLocalX = (80+27)/2;    // 53.5mm (前スキマ側の外向き成分)
+  var slopeMidLocalY = (45+110)/2;   // 77.5mm
+  // 斜面外向き法線(Y-Z平面内): (0, cos(slopeAngle), sin(slopeAngle))
+  var epsilon = 0.001;               // Z-fighting回避
 
   for(var k=0;k<n;k++){
     var sLx=pitOX+(lS+k*(ku+eU))*sc, sRx=pitOX+(lS+k*(ku+eU)+ku)*sc;
-    // 各区画に2本（区画左側・区画右側）
-    // 元コードと同じ：sLx+off2+prLen/2 と sRx-off2-prLen/2
     [sLx+off2+prLen/2, sRx-off2-prLen/2].forEach(function(cx){
-      // パーキングラバー本体（台形断面を長手方向に押し出し）
-      // ExtrudeGeometryはXY断面をZ方向に押し出す
-      // 長手方向をX軸に沿わせたいので rotation.y=+PI/2 で90度回転
-      // 断面XY座標はmmスケール→そのままprScで換算
+      // ラバー本体
       var rubberGeo=makeRubberStopperGeo(prLen);
-      // ジオメトリ原点調整：
-      //   Extrude後: X=-80*sc〜+80*sc, Y=0〜110*sc, Z=0〜prLen
-      //   → Z軸中央に移動 (Z: 0〜prLen → -prLen/2〜+prLen/2)
-      //   → X軸はX=0が中央なのでそのまま
-      //   スケールをscで縮小（mm→Three.js単位）
-      rubberGeo.scale(sc, sc, prLen); // XY断面をsc倍、Z方向をprLen（=560*sc）に
-      rubberGeo.translate(0, 0, -prLen/2); // Z中央寄せ
+      rubberGeo.scale(sc, sc, prLen);
+      rubberGeo.translate(0, 0, -prLen/2);
 
       var rubber=new THREE.Mesh(rubberGeo, rubberMat);
-      // Z押し出し方向をX軸に変換（rotation.y=-PI/2でZ→X）
       rubber.rotation.y=-Math.PI/2;
-      // 位置：床面上、ushZ位置
       rubber.position.set(cx, baseY, ushZ+prWsc/2);
       scene.add(rubber);
 
-      // 反射テープ（頂部の黄色帯）
-      var tapeW=prLen*0.7, tapeD=prWsc*0.45, tapeH=0.004;
-      var tapeMesh=new THREE.Mesh(new THREE.BoxGeometry(tapeW, tapeH, tapeD), tapeMat);
-      tapeMesh.position.set(cx, baseY+prHsc, ushZ+prWsc/2);
+      // ========= 反射テープ（斜面に面合わせ） =========
+      // PlaneGeometry(tapeW, tapeH): 初期状態XY平面, 法線=+Z
+      //   tapeW: 長手方向(ワールドX, rubberの長手方向と同じ)
+      //   tapeH: 斜面に沿う方向の幅
+      var tapeW = prLen * 0.72;
+      var tapeH = slopeLenMM * 0.75 * sc;
+
+      var tapeGeo = new THREE.PlaneGeometry(tapeW, tapeH);
+      var tapeMesh = new THREE.Mesh(tapeGeo, tapeMat);
+      // 平面の法線を「斜面外向き」にする:
+      //   斜面外向き法線ベクトル(ワールド) = (0, cos(slopeAngle), sin(slopeAngle))
+      //   PlaneGeometryの初期法線は+Z
+      //   X軸周りに -(π/2 - slopeAngle) 回転すると、
+      //     +Z → 回転後 → (0, sin(π/2-slopeAngle), cos(π/2-slopeAngle))
+      //                 = (0, cos(slopeAngle), sin(slopeAngle))  ✓
+      tapeMesh.rotation.x = -(Math.PI/2 - slopeAngle);
+      // 位置: 斜面中点 + 法線方向にepsilon浮かせる
+      var ny = Math.cos(slopeAngle);
+      var nz = Math.sin(slopeAngle);
+      tapeMesh.position.set(
+        cx,
+        baseY + slopeMidLocalY*sc + ny*epsilon,
+        ushZ + prWsc/2 + slopeMidLocalX*sc + nz*epsilon
+      );
       scene.add(tapeMesh);
     });
   }
