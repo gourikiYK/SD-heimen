@@ -450,7 +450,7 @@ function updateCam(){
 function loop3D(){
   animId=requestAnimationFrame(loop3D);
   if(isAnimating&&carGroup){
-    carGroup.position.z-=0.018;
+    carGroup.position.z-=0.05;
     if(carGroup.position.z<=stopZ){carGroup.position.z=stopZ;isAnimating=false;document.getElementById('placeBtn').disabled=false;}
   }
   renderer3.render(scene,camera);
