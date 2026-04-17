@@ -1,0 +1,497 @@
+<head>
+  <meta charset="UTF-8">
+  <title>スマートデッキ 平面図作成ツール</title>
+  <link rel="icon" href="/SmartDeck/favicon.ico" type="image/x-icon">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1b2a;--bg2:#152236;--bg3:#1c2e44;--text:#e8edf2;--text2:#8fa8c0;--border:#2a3f58;--accent:#3a8fd4}
+body{font-family:'Hiragino Sans','Meiryo',sans-serif;color:var(--text);background:var(--bg)}
+.wrap{padding:1rem;max-width:900px;margin:0 auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.card{background:var(--bg2);border:.5px solid var(--border);border-radius:10px;padding:1rem 1.25rem;margin-bottom:12px}
+.sec-title{font-size:13px;font-weight:500;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.field label{font-size:12px;color:var(--text2)}
+.field input,.field select{width:100%;height:36px;padding:0 10px;border:.5px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-size:14px}
+.field.hidden{display:none}
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.metric{background:var(--bg2);border:.5px solid var(--border);border-radius:8px;padding:10px 12px}
+.metric .lbl{font-size:11px;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.metric .val{font-size:20px;font-weight:600;color:var(--accent)}
+.canvas-wrap{display:flex;justify-content:center;margin-bottom:12px;position:relative}
+canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width:100%}
+#cv3{display:none;border:.5px solid var(--border);border-radius:8px}
+.warn{font-size:13px;color:#e05555;margin-top:4px;margin-bottom:8px}
+.top-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:.5px solid var(--border)}
+.reset-btn{height:34px;padding:0 16px;border:.5px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer}
+.reset-btn:hover{border-color:var(--accent);color:var(--accent)}
+.view-toggle{display:flex;border:.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.vbtn{flex:1;padding:8px;font-size:13px;font-weight:500;border:none;background:var(--bg3);color:var(--text2);cursor:pointer}
+.vbtn.active{background:var(--accent);color:#fff}
+.hint3d{position:absolute;top:8px;right:10px;font-size:11px;color:rgba(255,255,255,0.45);pointer-events:none;display:none;text-align:right;line-height:1.6}
+.side-menu{position:absolute;top:0;left:0;bottom:0;width:145px;background:rgba(10,20,35,0.92);border-right:0.5px solid rgba(255,255,255,0.12);border-radius:8px 0 0 8px;display:none;flex-direction:column;padding:10px 8px;gap:6px;overflow-y:auto}
+.smtitle{font-size:11px;color:rgba(200,220,240,0.55);letter-spacing:.05em;padding:0 2px;margin-top:2px}
+.car-btn{width:100%;padding:7px 9px;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:1px}
+.car-btn:hover{background:rgba(58,143,212,0.25);border-color:rgba(58,143,212,0.5)}
+.car-btn.active{background:rgba(58,143,212,0.35);border-color:#3a8fd4}
+.car-btn .cname{font-weight:500;font-size:12px}
+.car-btn .csize{font-size:10px;color:var(--text2)}
+.color-row{display:flex;flex-wrap:wrap;gap:4px;padding:0 2px}
+.color-dot{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+.color-dot.sel{border-color:#fff}
+.place-btn{width:100%;padding:9px;background:#3a8fd4;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:500;cursor:pointer}
+.place-btn:hover{background:#2a7fc4}
+.place-btn:disabled{background:#2a3f58;color:#556;cursor:not-allowed}
+.remove-btn{width:100%;padding:7px;background:rgba(200,60,60,0.2);border:0.5px solid rgba(200,60,60,0.4);border-radius:6px;color:#f88;font-size:11px;cursor:pointer}
+.remove-btn:hover{background:rgba(200,60,60,0.35)}
+.wall-ctrl{position:absolute;bottom:10px;right:10px;display:none;background:rgba(10,20,35,0.88);border:0.5px solid rgba(255,255,255,0.15);border-radius:8px;padding:8px 12px;min-width:150px}
+.wall-ctrl .wlabel{font-size:11px;color:rgba(200,220,240,0.65);margin-bottom:5px}
+.wall-ctrl .wrow{display:flex;align-items:center;gap:8px}
+.wall-ctrl input[type=range]{flex:1;accent-color:#3a8fd4}
+.wall-ctrl .wval{font-size:12px;color:#fff;font-weight:500;min-width:36px;text-align:right}
+.top-bar img{
+  height:28px;
+  display:block;
+}
+</style>
+</head>
+<div class="wrap">
+<div class="top-bar">
+        <img src="/SmartDeck/logo.png" alt="SmartDeck">
+</div>
+<div class="view-toggle">
+  <button class="vbtn active" id="btn2d" onclick="setView('2d')">2D 平面図</button>
+  <button class="vbtn" id="btn3d" onclick="setView('3d')">3D ビュー</button>
+</div>
+<div class="card">
+  <p class="sec-title">基本寸法</p>
+  <div class="grid2">
+    <div class="field"><label>ピット間口 (mm)</label><input type="number" id="maguchi" value="10000" step="0.1"></div>
+    <div class="field"><label>ピット奥行き (mm)</label><input type="number" id="okuyuki" value="5200" step="0.1"></div>
+  </div>
+  <div class="grid2">
+    <div class="field hidden" id="takasa-field"><label>高さ (mm)</label><input type="number" id="takasa" value="2000" step="10" min="500"></div>
+  </div>
+</div>
+<div class="card">
+  <p class="sec-title">ライン設定</p>
+  <div class="grid3">
+    <div class="field"><label>連数</label>
+      <select id="rensuu">
+        <option value="1">1連</option><option value="2">2連</option><option value="3">3連</option>
+        <option value="4" selected>4連</option><option value="5">5連</option><option value="6">6連</option>
+        <option value="7">7連</option><option value="8">8連</option><option value="9">9連</option>
+        <option value="10">10連</option><option value="11">11連</option><option value="12">12連</option>
+      </select>
+    </div>
+    <div class="field"><label>ラインパターン</label>
+      <select id="pattern"><option value="U字">U字</option><option value="I字">I字</option></select>
+    </div>
+    <div class="field" id="ujihaba-field"><label>U字幅 (mm)</label><input type="number" id="ujihaba" value="500" step="0.1"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>左スキマ (mm)</label><input type="number" id="hidari" value="250" step="0.1"></div>
+    <div class="field"><label>右スキマ (mm)</label><input type="number" id="migi" value="250" step="0.1"></div>
+    <div class="field"><label>前スキマ (mm)</label><input type="number" id="mae" value="200" step="0.1"></div>
+  </div>
+  <div class="grid3">
+    <div class="field"><label>後スキマ (mm)</label><input type="number" id="ushiro" value="1000" step="0.1"></div>
+    <div class="field"><label>ライン太さ (mm)</label><input type="number" id="linewidth" value="100" step="10" min="10"></div>
+  </div>
+  <button class="reset-btn" id="resetBtn">↩ デフォルトに戻す</button>
+  <button class="reset-btn" id="saveBtn" style="margin-left:8px;">📥 図をPNGで保存</button>
+</div>
+<div id="warn" class="warn" style="display:none"></div>
+<div id="metrics" class="metric-grid"></div>
+<div class="canvas-wrap" id="cwrap">
+  <canvas id="cv"></canvas>
+  <canvas id="cv3" width="860" height="500"></canvas>
+  <div class="hint3d" id="hint3d">ドラッグ: 回転<br>スクロール: ズーム</div>
+  <div class="side-menu" id="sideMenu">
+    <div class="smtitle">車種を選択</div>
+    <button class="car-btn active" id="cb0" onclick="selectCar(0)"><span class="cname">セダン</span><span class="csize">W1700 D4500 H1450</span></button>
+    <button class="car-btn" id="cb1" onclick="selectCar(1)"><span class="cname">SUV</span><span class="csize">W1850 D4600 H1700</span></button>
+    <button class="car-btn" id="cb2" onclick="selectCar(2)"><span class="cname">ミニバン</span><span class="csize">W1730 D4700 H1850</span></button>
+    <button class="car-btn" id="cb3" onclick="selectCar(3)"><span class="cname">軽自動車</span><span class="csize">W1480 D3400 H1700</span></button>
+    <button class="car-btn" id="cb4" onclick="selectCar(4)"><span class="cname">コンパクト</span><span class="csize">W1695 D3900 H1525</span></button>
+    <div class="smtitle">カラー</div>
+    <div class="color-row" id="colorRow"></div>
+    <div style="flex:1"></div>
+    <button class="place-btn" id="placeBtn" onclick="placeCar()">車を設置する</button>
+    <button class="remove-btn" onclick="removeCar()" style="margin-top:4px">車を取り除く</button>
+  </div>
+  <div class="wall-ctrl" id="wallCtrl">
+    <div class="wlabel">外壁の透明度</div>
+    <div class="wrow">
+      <input type="range" id="wallOpacity" min="0" max="100" value="100" step="1">
+      <span class="wval" id="wallOpacityVal">100%</span>
+    </div>
+  </div>
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var currentView='2d';
+var wallOpacity=1.0;
+var wallMats=[];
+var selectedCar=0;
+var selectedColor=0;
+var carGroup=null;
+var isAnimating=false;
+var stopZ=0;
+
+// 車種定義：全寸法はmm実寸。タイヤは車体幅の内側に収める
+var CAR_TYPES=[
+  {name:'セダン',    W:1700, D:4500, H:1450, roofRatio:0.48, cabinZOff:0.05,  cabinDRatio:0.52},
+  {name:'SUV',      W:1850, D:4600, H:1700, roofRatio:0.55, cabinZOff:0.0,   cabinDRatio:0.58},
+  {name:'ミニバン',  W:1730, D:4700, H:1850, roofRatio:0.65, cabinZOff:-0.05, cabinDRatio:0.72},
+  {name:'軽自動車',  W:1480, D:3400, H:1700, roofRatio:0.62, cabinZOff:-0.02, cabinDRatio:0.68},
+  {name:'コンパクト',W:1695, D:3900, H:1525, roofRatio:0.50, cabinZOff:0.02,  cabinDRatio:0.54},
+];
+var CAR_COLORS=[0x2255aa,0xcc3322,0x228844,0x888888,0x111111,0xddddcc,0x334488,0x995522];
+var COLOR_HEX=['#2255aa','#cc3322','#228844','#888888','#111111','#ddddcc','#334488','#995522'];
+
+var cr=document.getElementById('colorRow');
+COLOR_HEX.forEach(function(c,i){
+  var d=document.createElement('div');
+  d.className='color-dot'+(i===0?' sel':'');
+  d.style.background=c;
+  d.onclick=function(){cr.querySelectorAll('.color-dot').forEach(function(x){x.classList.remove('sel');});d.classList.add('sel');selectedColor=i;};
+  cr.appendChild(d);
+});
+window.selectCar=function(i){
+  selectedCar=i;
+  document.querySelectorAll('.car-btn').forEach(function(b,j){b.classList.toggle('active',j===i);});
+};
+
+function fmt(v){var r=Math.round(v*10)/10;return(r%1===0)?r.toString():r.toFixed(1);}
+function gv(id){return+document.getElementById(id).value;}
+function getP(){
+  var pat=document.getElementById('pattern').value;
+  var lw=gv('linewidth'),U=gv('ujihaba'),eU=(pat==='I字')?lw:U;
+  var L=gv('maguchi'),D=gv('okuyuki'),n=gv('rensuu');
+  var lS=gv('hidari'),rS=gv('migi'),maeS=gv('mae'),ushiroS=gv('ushiro');
+  var ku=(L-lS-rS-eU*(n-1))/n;
+  return{L,D,n,pat,U,lS,rS,maeS,ushiroS,lw,eU,ku,H:gv('takasa')||2000};
+}
+function updateMetrics(p){
+  var warnEl=document.getElementById('warn');
+  if(p.ku<=0){warnEl.style.display='block';warnEl.textContent='区画幅が0以下になっています。';return false;}
+  warnEl.style.display='none';
+  document.getElementById('metrics').innerHTML=
+    '<div class="metric"><div class="lbl">区画幅</div><div class="val">'+fmt(p.ku)+'<span style="font-size:12px;font-weight:400;color:var(--text2)"> mm</span></div></div>'+
+    '<div class="metric"><div class="lbl">ライン間隔</div><div class="val">'+fmt(p.ku+p.eU)+'<span style="font-size:12px;font-weight:400;color:var(--text2)"> mm</span></div></div>'+
+    '<div class="metric"><div class="lbl">ライン本数</div><div class="val">'+(p.n+1)+'<span style="font-size:12px;font-weight:400;color:var(--text2)"> 本</span></div></div>'+
+    '<div class="metric"><div class="lbl">連数</div><div class="val">'+p.n+'<span style="font-size:12px;font-weight:400;color:var(--text2)"> 連</span></div></div>';
+  return true;
+}
+function dimSeg(ctx,xA,xB,y,label,color){
+  color=color||'#8fa8c0';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(xA,y-4);ctx.lineTo(xA,y+4);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(xB,y-4);ctx.lineTo(xB,y+4);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(xA,y);ctx.lineTo(xB,y);ctx.stroke();
+  var ah=4;
+  if(xB-xA>ah*3){ctx.beginPath();ctx.moveTo(xA,y);ctx.lineTo(xA+ah,y-ah/2);ctx.lineTo(xA+ah,y+ah/2);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(xB,y);ctx.lineTo(xB-ah,y-ah/2);ctx.lineTo(xB-ah,y+ah/2);ctx.closePath();ctx.fill();}
+  ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,(xA+xB)/2,y+11);
+}
+function draw2D(){
+  var p=getP();if(!updateMetrics(p))return;
+  var L=p.L,D=p.D,n=p.n,pat=p.pat,lS=p.lS,rS=p.rS,maeS=p.maeS,ushiroS=p.ushiroS,ku=p.ku,eU=p.eU,lw=p.lw;
+  var wall=250,cv=document.getElementById('cv');
+  var marginL=70,marginR=50,marginT=20,marginB=60,maxW=Math.min(860,cv.parentElement.offsetWidth-2);
+  var wall2=wall*2,totalW=L+wall2,totalD=D+wall2;
+  var scale=Math.min((maxW-marginL-marginR)/totalW,350/totalD);
+  cv.width=Math.round(totalW*scale)+marginL+marginR;cv.height=Math.round(totalD*scale)+marginT+marginB;
+  var ctx=cv.getContext('2d');ctx.clearRect(0,0,cv.width,cv.height);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,cv.width,cv.height);
+  var ox=marginL,oy=marginT,outerW=Math.round(totalW*scale),outerH=Math.round(totalD*scale);
+  var pitX=ox+wall*scale,pitY=oy+wall*scale,pitW=L*scale,pitH=D*scale;
+  ctx.fillStyle='#c8c8c8';ctx.fillRect(ox,oy,outerW,outerH);ctx.strokeStyle='#888';ctx.lineWidth=1;ctx.strokeRect(ox,oy,outerW,outerH);
+  ctx.fillStyle='#dde8f0';ctx.fillRect(pitX,pitY,pitW,pitH);ctx.strokeStyle='#555';ctx.lineWidth=1.5;ctx.strokeRect(pitX,pitY,pitW,pitH);
+  ctx.fillStyle='rgba(180,210,230,0.3)';var sH=Math.max(3,pitH/20);for(var sy=pitY;sy<pitY+pitH;sy+=sH*2)ctx.fillRect(pitX,sy,pitW,sH);
+  var lSx=pitX+lS*scale,rSx=pitX+(L-rS)*scale,ushiroSy=pitY+ushiroS*scale,maeSy=pitY+pitH-maeS*scale;
+  ctx.strokeStyle='#aaa';ctx.setLineDash([4,3]);ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(lSx,pitY);ctx.lineTo(lSx,pitY+pitH);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(rSx,pitY);ctx.lineTo(rSx,pitY+pitH);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pitX,ushiroSy);ctx.lineTo(pitX+pitW,ushiroSy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pitX,maeSy);ctx.lineTo(pitX+pitW,maeSy);ctx.stroke();
+  for(var k=0;k<n-1;k++){var gS=lS+(k+1)*ku+k*eU;ctx.beginPath();ctx.moveTo(pitX+gS*scale,pitY);ctx.lineTo(pitX+gS*scale,pitY+pitH);ctx.stroke();ctx.beginPath();ctx.moveTo(pitX+(gS+eU)*scale,pitY);ctx.lineTo(pitX+(gS+eU)*scale,pitY+pitH);ctx.stroke();}
+  ctx.setLineDash([]);
+  var lineColor='#e07820',lineW=Math.min(Math.max(1,lw*scale),ku*scale),half=lineW/2;
+  if(pat==='U字'){
+    ctx.strokeStyle=lineColor;ctx.lineWidth=lineW;
+    ctx.beginPath();ctx.moveTo(lSx-half,ushiroSy);ctx.lineTo(lSx-half,maeSy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(rSx+half,ushiroSy);ctx.lineTo(rSx+half,maeSy);ctx.stroke();
+    for(var k=0;k<n-1;k++){var gS=lS+(k+1)*ku+k*eU;var lx=pitX+gS*scale+half,rx=pitX+(gS+eU)*scale-half;var r=Math.max(lineW,(rx-lx)/2),botY=maeSy-r;ctx.strokeStyle=lineColor;ctx.lineWidth=lineW;ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(lx,ushiroSy);ctx.lineTo(lx,botY);ctx.arcTo(lx,botY+r,lx+r,botY+r,r);ctx.arcTo(rx,botY+r,rx,botY,r);ctx.lineTo(rx,ushiroSy);ctx.stroke();}
+  }else{
+    var allPos=[lS,L-rS];for(var k=0;k<n-1;k++)allPos.push(lS+(k+1)*ku+k*eU+eU/2);
+    for(var i=0;i<allPos.length;i++){var pos=allPos[i],cxp=(i===0)?pitX+pos*scale-half:(i===1)?pitX+pos*scale+half:pitX+pos*scale;ctx.strokeStyle=lineColor;ctx.lineWidth=lineW;ctx.beginPath();ctx.moveTo(cxp,ushiroSy);ctx.lineTo(cxp,maeSy);ctx.stroke();}
+  }
+  for(var k=0;k<n;k++){
+    var sLx2=pitX+(lS+k*(ku+eU))*scale,sRx2=pitX+(lS+k*(ku+eU)+ku)*scale;
+    var off=50*scale,sw2=560*scale,sh2=160*scale;
+    [sLx2+off+sw2/2,sRx2-off-sw2/2].forEach(function(cx){
+      var sx=cx-sw2/2,sy2=ushiroSy;ctx.fillStyle='#111';ctx.fillRect(sx,sy2,sw2,sh2);
+      var rw=sw2*0.75,rh=sh2*0.28,rx2=cx-rw/2,ry2=sy2+sh2*0.36;ctx.fillStyle='#333';ctx.fillRect(rx2-1,ry2-1,rw+2,rh+2);ctx.fillStyle='#f5c200';ctx.fillRect(rx2,ry2,rw,rh);ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fillRect(rx2,ry2,rw,rh*0.35);
+    });
+  }
+  ctx.setLineDash([]);
+  var dimY1=pitY+pitH+18,curX=pitX;
+  dimSeg(ctx,curX,curX+lS*scale,dimY1,fmt(lS),'#555');curX+=lS*scale;
+  for(var k=0;k<n;k++){dimSeg(ctx,curX,curX+ku*scale,dimY1,fmt(ku),'#1a6b9e');curX+=ku*scale;if(k<n-1){dimSeg(ctx,curX,curX+eU*scale,dimY1,fmt(eU),'#c87000');curX+=eU*scale;}}
+  dimSeg(ctx,curX,pitX+pitW,dimY1,fmt(rS),'#555');
+  var dimY2=dimY1+22;ctx.strokeStyle='#555';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(pitX,pitY+pitH+6);ctx.lineTo(pitX,dimY2+6);ctx.stroke();ctx.beginPath();ctx.moveTo(pitX+pitW,pitY+pitH+6);ctx.lineTo(pitX+pitW,dimY2+6);ctx.stroke();dimSeg(ctx,pitX,pitX+pitW,dimY2,'ピット間口 '+fmt(L),'#222');
+  var ah=4,dX=ox-12;ctx.strokeStyle='#222';ctx.fillStyle='#222';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(dX,pitY);ctx.lineTo(dX,pitY+pitH);ctx.stroke();ctx.beginPath();ctx.moveTo(dX,pitY);ctx.lineTo(dX-ah/2,pitY+ah);ctx.lineTo(dX+ah/2,pitY+ah);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(dX,pitY+pitH);ctx.lineTo(dX-ah/2,pitY+pitH-ah);ctx.lineTo(dX+ah/2,pitY+pitH-ah);ctx.closePath();ctx.fill();ctx.save();ctx.translate(dX-10,pitY+pitH/2);ctx.rotate(-Math.PI/2);ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#222';ctx.fillText('ピット奥行き '+fmt(D),0,0);ctx.restore();
+  var dX2=ox+outerW+12;ctx.strokeStyle='#555';ctx.fillStyle='#555';ctx.lineWidth=0.8;ctx.beginPath();ctx.moveTo(dX2,pitY);ctx.lineTo(dX2,ushiroSy);ctx.stroke();ctx.beginPath();ctx.moveTo(dX2,pitY);ctx.lineTo(dX2-ah/2,pitY+ah);ctx.lineTo(dX2+ah/2,pitY+ah);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(dX2,ushiroSy);ctx.lineTo(dX2-ah/2,ushiroSy-ah);ctx.lineTo(dX2+ah/2,ushiroSy-ah);ctx.closePath();ctx.fill();ctx.strokeStyle='#555';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(pitX+pitW,pitY);ctx.lineTo(dX2+4,pitY);ctx.stroke();ctx.beginPath();ctx.moveTo(pitX+pitW,ushiroSy);ctx.lineTo(dX2+4,ushiroSy);ctx.stroke();ctx.save();ctx.translate(dX2+10,pitY+ushiroS*scale/2);ctx.rotate(-Math.PI/2);ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#555';ctx.fillText('後スキマ '+fmt(ushiroS),0,0);ctx.restore();
+}
+
+var scene,camera,renderer3,animId;
+var isDrag=false,lastMX=0,lastMY=0,theta=0.6,phi=0.45,rad=22;
+
+function makeConcreteTexture(){
+  var sz=256,can=document.createElement('canvas');can.width=sz;can.height=sz;
+  var ctx=can.getContext('2d');ctx.fillStyle='#909088';ctx.fillRect(0,0,sz,sz);
+  for(var i=0;i<5000;i++){var x=Math.random()*sz,y=Math.random()*sz,rr=Math.random()*1.8+0.3,v=Math.floor(Math.random()*35)-17,c2=140+v;ctx.fillStyle='rgba('+c2+','+c2+','+(c2-3)+',0.2)';ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);ctx.fill();}
+  for(var j=1;j<4;j++){ctx.strokeStyle='rgba(50,50,45,0.15)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,j*sz/4);ctx.lineTo(sz,j*sz/4);ctx.stroke();}
+  var tex=new THREE.CanvasTexture(can);tex.wrapS=THREE.RepeatWrapping;tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(2,3);return tex;
+}
+
+// 車を作る：cW/cD/cHはすべてmm実寸×sc
+// タイヤは車体幅の内側に完全に収める
+function makeCar3D(typeIdx, colorHex, sc){
+  var t=CAR_TYPES[typeIdx];
+  var cW=t.W*sc, cD=t.D*sc, cH=t.H*sc;
+  var g=new THREE.Group();
+  var mat=new THREE.MeshStandardMaterial({color:colorHex,roughness:0.35,metalness:0.4});
+
+  // 車体下部（フル幅・フル奥行き）
+  var loH=cH*(1-t.roofRatio);
+  var lo=new THREE.Mesh(new THREE.BoxGeometry(cW,loH,cD),mat);
+  lo.position.y=loH/2; g.add(lo);
+
+  // キャビン（車体幅より少し狭く）
+  var cabW=cW*0.94,cabH=cH*t.roofRatio,cabD=cD*t.cabinDRatio;
+  var cabZOff=cD*t.cabinZOff;
+  var cab=new THREE.Mesh(new THREE.BoxGeometry(cabW,cabH,cabD),mat);
+  cab.position.set(0,loH+cabH/2,cabZOff); g.add(cab);
+
+  // フロントガラス（Z正=前）
+  var glassMat=new THREE.MeshStandardMaterial({color:0x99ccee,transparent:true,opacity:0.55,roughness:0.05});
+  var fg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.88,cabH*0.7,0.01),glassMat);
+  fg.position.set(0,loH+cabH*0.5,cabZOff+cabD/2); g.add(fg);
+  // リアガラス（Z負=後）
+  var rg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.82,cabH*0.62,0.01),glassMat);
+  rg.position.set(0,loH+cabH*0.5,cabZOff-cabD/2); g.add(rg);
+
+  // タイヤ：車体幅cWの内側に収める
+  // タイヤ幅tW = cW * 0.12（車体幅の12%）
+  // タイヤ外端X = ±(cW/2 - 数mm余白)
+  // タイヤ中心X = ±(cW/2 - tW/2 - 小余白)
+  var tR=cH*0.13;  // タイヤ半径
+  var tW=cW*0.11;  // タイヤ幅
+  var tCX=(cW/2-tW/2-cW*0.01); // タイヤ中心X（車体内側に収まる）
+  var tireMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.9});
+  var rimMat=new THREE.MeshStandardMaterial({color:0xb0b0b0,roughness:0.3,metalness:0.7});
+  [[-tCX,tR,cD*0.32],[tCX,tR,cD*0.32],[-tCX,tR,-cD*0.3],[tCX,tR,-cD*0.3]].forEach(function(pos){
+    var tire=new THREE.Mesh(new THREE.CylinderGeometry(tR,tR,tW,20),tireMat);
+    tire.rotation.z=Math.PI/2;tire.position.set(pos[0],pos[1],pos[2]);g.add(tire);
+    var rim=new THREE.Mesh(new THREE.CylinderGeometry(tR*0.58,tR*0.58,tW+0.002,12),rimMat);
+    rim.rotation.z=Math.PI/2;rim.position.set(pos[0],pos[1],pos[2]);g.add(rim);
+  });
+
+  // テールライト（Z負=後部）
+  var tailMat=new THREE.MeshStandardMaterial({color:0xff2200,roughness:0.1,emissive:0x550000});
+  [-1,1].forEach(function(s){var tl=new THREE.Mesh(new THREE.BoxGeometry(cW*0.13,cH*0.07,0.015),tailMat);tl.position.set(s*cW*0.34,loH*0.65,-cD/2);g.add(tl);});
+  // ヘッドライト（Z正=前部）
+  var headMat=new THREE.MeshStandardMaterial({color:0xffffdd,roughness:0.05,emissive:0x222200});
+  [-1,1].forEach(function(s){var hl=new THREE.Mesh(new THREE.BoxGeometry(cW*0.13,cH*0.06,0.015),headMat);hl.position.set(s*cW*0.34,loH*0.62,cD/2);g.add(hl);});
+  // ナンバープレート（後部）
+  var plate=new THREE.Mesh(new THREE.BoxGeometry(cW*0.28,cH*0.045,0.01),new THREE.MeshStandardMaterial({color:0xeeeeff,roughness:0.5}));
+  plate.position.set(0,loH*0.38,-cD/2);g.add(plate);
+
+  return g;
+}
+
+window.placeCar=function(){
+  if(isAnimating)return;
+  if(carGroup){scene.remove(carGroup);carGroup=null;}
+  var p=getP();if(p.ku<=0)return;
+  var sc=0.004;
+  var wallH=p.H*sc,baseY=wallH+0.04;
+  var pitOZ=(-p.D/2)*sc;
+  var ushZ=pitOZ+p.ushiroS*sc;
+  var maeZ=pitOZ+(p.D-p.maeS)*sc;
+  var pitOX=(-p.L/2)*sc;
+  // 1区画目中央X
+  var carCX=pitOX+(p.lS+p.ku/2)*sc;
+  var t=CAR_TYPES[selectedCar];
+  var cD=t.D*sc,tR=t.H*sc*0.13;
+  // 後タイヤ中心Z = stopZ - cD*0.3
+  // 後タイヤ後端 = 後タイヤ中心Z - tR = ushZ → stopZ = ushZ + tR + cD*0.3
+  stopZ=ushZ+tR+cD*0.3;
+  carGroup=makeCar3D(selectedCar,CAR_COLORS[selectedColor],sc);
+  carGroup.position.set(carCX,baseY,maeZ+cD*1.2);
+  scene.add(carGroup);
+  isAnimating=true;
+  document.getElementById('placeBtn').disabled=true;
+};
+
+window.removeCar=function(){
+  if(carGroup){scene.remove(carGroup);carGroup=null;}
+  isAnimating=false;document.getElementById('placeBtn').disabled=false;
+};
+
+function updateWallOpacity(){
+  wallMats.forEach(function(mat){mat.opacity=wallOpacity;mat.transparent=wallOpacity<0.999;mat.depthWrite=wallOpacity>=0.999;mat.needsUpdate=true;});
+}
+
+function build3D(){
+  if(!scene)return;
+  wallMats=[];carGroup=null;isAnimating=false;document.getElementById('placeBtn').disabled=false;
+  while(scene.children.length>4)scene.remove(scene.children[4]);
+  var p=getP();if(!updateMetrics(p))return;
+  var L=p.L,D=p.D,n=p.n,pat=p.pat,lS=p.lS,rS=p.rS,maeS=p.maeS,ushiroS=p.ushiroS,ku=p.ku,eU=p.eU,lw=p.lw,H=p.H;
+  var wall=250,sc=0.004;
+  var wallH=H*sc,wallT=wall*sc,totalW=(L+wall*2)*sc,totalD=(D+wall*2)*sc;
+  var pitOX=(-L/2)*sc,pitOZ=(-D/2)*sc;
+  scene.add(new THREE.GridHelper(80,80,0x1a3a5a,0x152a45));
+  [[totalW,wallH,wallT,0,wallH/2,-totalD/2+wallT/2],[totalW,wallH,wallT,0,wallH/2,totalD/2-wallT/2],[wallT,wallH,totalD,-totalW/2+wallT/2,wallH/2,0],[wallT,wallH,totalD,totalW/2-wallT/2,wallH/2,0]].forEach(function(w){
+    var mat=new THREE.MeshStandardMaterial({map:makeConcreteTexture(),color:0xb2b0a8,roughness:0.88,metalness:0.02,side:THREE.DoubleSide,transparent:wallOpacity<0.999,opacity:wallOpacity,depthWrite:wallOpacity>=0.999});
+    wallMats.push(mat);var m=new THREE.Mesh(new THREE.BoxGeometry(w[0],w[1],w[2]),mat);m.position.set(w[3],w[4],w[5]);scene.add(m);
+  });
+  var stex=makeConcreteTexture();stex.repeat.set(4,4);
+  var sf=new THREE.Mesh(new THREE.BoxGeometry(totalW,0.04,totalD),new THREE.MeshStandardMaterial({map:stex,color:0xb2b0a8,roughness:0.88}));sf.position.set(0,wallH,0);scene.add(sf);
+  var pf=new THREE.Mesh(new THREE.BoxGeometry(L*sc,0.04,D*sc),new THREE.MeshStandardMaterial({color:0xdde8f0,roughness:0.8}));pf.position.set(0,wallH+0.02,0);scene.add(pf);
+  var stripD=D*sc/20,smat=new THREE.MeshStandardMaterial({color:0xb4d2e6,roughness:0.9,transparent:true,opacity:0.3});
+  for(var si=0;si<10;si++){var sm2=new THREE.Mesh(new THREE.PlaneGeometry(L*sc,stripD),smat);sm2.rotation.x=-Math.PI/2;sm2.position.set(0,wallH+0.04,pitOZ+stripD/2+si*stripD*2);scene.add(sm2);}
+  var lineH3=0.05,lwSc=lw*sc,ushZ=pitOZ+ushiroS*sc,maeZ=pitOZ+(D-maeS)*sc,baseY=wallH+0.04;
+  var lineMat=new THREE.MeshStandardMaterial({color:0xe07820,roughness:0.3,emissive:0x331500});
+  function addLine(x,z,w,d){var m=new THREE.Mesh(new THREE.BoxGeometry(w,lineH3,d),lineMat);m.position.set(x+w/2,baseY+lineH3/2,z+d/2);scene.add(m);}
+  if(pat==='U字'){
+    addLine(pitOX+lS*sc-lwSc,ushZ,lwSc,maeZ-ushZ);addLine(pitOX+(L-rS)*sc,ushZ,lwSc,maeZ-ushZ);
+    for(var k=0;k<n-1;k++){var gS=lS+(k+1)*ku+k*eU,lx3=pitOX+gS*sc,rx3=pitOX+(gS+eU)*sc;addLine(lx3,ushZ,lwSc,maeZ-ushZ);addLine(rx3-lwSc,ushZ,lwSc,maeZ-ushZ);addLine(lx3,maeZ,rx3-lx3,lwSc);}
+  }else{
+    var allPos=[lS,L-rS];for(var k=0;k<n-1;k++)allPos.push(lS+(k+1)*ku+k*eU+eU/2);
+    allPos.forEach(function(pos,i){var lx4=(i===0)?pitOX+pos*sc-lwSc:(i===1)?pitOX+pos*sc:pitOX+pos*sc-lwSc/2;addLine(lx4,ushZ,lwSc,maeZ-ushZ);});
+  }
+  // パーキングラバー形状（OBJファイルより）
+  // 実寸：幅160mm(X±80), 高さ110mm(Y), 長さ560mm(Z±280)
+  // 断面：底部Y=0でX±80, Y=45まで垂直, その後傾斜してY=110でX±27
+  function makeRubberStopperGeo(length){
+    // 断面形状（XY平面、mmスケール原寸）
+    // 底部±80mm幅, Y=45まで垂直, Y=45〜110は傾斜して頂部±27mm
+    var shape=new THREE.Shape();
+    shape.moveTo( 80,  0);
+    shape.lineTo( 80, 45);
+    shape.lineTo( 27,110);
+    shape.lineTo(-27,110);
+    shape.lineTo(-80, 45);
+    shape.lineTo(-80,  0);
+    shape.lineTo( 80,  0);
+    // depthはZ方向の長さ（mm原寸560を後でscaleする前のlength=1を使う）
+    var extrudeSettings={depth:1, bevelEnabled:false};
+    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  }
+
+  // パーキングラバー実寸（mm）
+  var prW=160, prH=110, prL=560;
+  var rubberMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.75,metalness:0.05});
+  // 黄色反射テープ部分（上面の帯）
+  var tapeMat=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.35,metalness:0.2,emissive:0x221a00});
+
+  var prLen=prL*sc;   // 560mm→Three.js単位
+  var prWsc=prW*sc;   // 160mm→Three.js単位
+  var prHsc=prH*sc;   // 110mm→Three.js単位
+  var off2=50*sc;     // ラインからのオフセット（元コードと同じ）
+
+  for(var k=0;k<n;k++){
+    var sLx=pitOX+(lS+k*(ku+eU))*sc, sRx=pitOX+(lS+k*(ku+eU)+ku)*sc;
+    // 各区画に2本（区画左側・区画右側）
+    // 元コードと同じ：sLx+off2+prLen/2 と sRx-off2-prLen/2
+    [sLx+off2+prLen/2, sRx-off2-prLen/2].forEach(function(cx){
+      // パーキングラバー本体（台形断面を長手方向に押し出し）
+      // ExtrudeGeometryはXY断面をZ方向に押し出す
+      // 長手方向をX軸に沿わせたいので rotation.y=+PI/2 で90度回転
+      // 断面XY座標はmmスケール→そのままprScで換算
+      var rubberGeo=makeRubberStopperGeo(prLen);
+      // ジオメトリ原点調整：
+      //   Extrude後: X=-80*sc〜+80*sc, Y=0〜110*sc, Z=0〜prLen
+      //   → Z軸中央に移動 (Z: 0〜prLen → -prLen/2〜+prLen/2)
+      //   → X軸はX=0が中央なのでそのまま
+      //   スケールをscで縮小（mm→Three.js単位）
+      rubberGeo.scale(sc, sc, prLen); // XY断面をsc倍、Z方向をprLen（=560*sc）に
+      rubberGeo.translate(0, 0, -prLen/2); // Z中央寄せ
+
+      var rubber=new THREE.Mesh(rubberGeo, rubberMat);
+      // Z押し出し方向をX軸に変換（rotation.y=-PI/2でZ→X）
+      rubber.rotation.y=-Math.PI/2;
+      // 位置：床面上、ushZ位置
+      rubber.position.set(cx, baseY, ushZ+prWsc/2);
+      scene.add(rubber);
+
+      // 反射テープ（頂部の黄色帯）
+      var tapeW=prLen*0.7, tapeD=prWsc*0.45, tapeH=0.004;
+      var tapeMesh=new THREE.Mesh(new THREE.BoxGeometry(tapeW, tapeH, tapeD), tapeMat);
+      tapeMesh.position.set(cx, baseY+prHsc, ushZ+prWsc/2);
+      scene.add(tapeMesh);
+    });
+  }
+  rad=Math.max(totalW,totalD)*3.2+wallH*1.5+4;updateCam();
+}
+
+function updateCam(){
+  if(!camera)return;
+  var wallH=(gv('takasa')||2000)*0.004,lookY=wallH/2;
+  camera.position.set(Math.sin(theta)*rad*Math.cos(phi),lookY+Math.sin(phi)*rad,Math.cos(theta)*rad*Math.cos(phi));
+  camera.lookAt(0,lookY,0);
+}
+function loop3D(){
+  animId=requestAnimationFrame(loop3D);
+  if(isAnimating&&carGroup){
+    carGroup.position.z-=0.018;
+    if(carGroup.position.z<=stopZ){carGroup.position.z=stopZ;isAnimating=false;document.getElementById('placeBtn').disabled=false;}
+  }
+  renderer3.render(scene,camera);
+}
+function init3D(){
+  var c=document.getElementById('cv3'),cw=document.getElementById('cwrap');
+  c.width=cw.offsetWidth||860;c.height=500;
+  if(renderer3){renderer3.dispose();renderer3=null;}
+  renderer3=new THREE.WebGLRenderer({canvas:c,antialias:true});
+  renderer3.setSize(c.width,c.height,false);renderer3.setClearColor(0x0d1b2a);
+  scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(50,c.width/c.height,0.1,2000);
+  var amb=new THREE.AmbientLight(0xffffff,0.55);scene.add(amb);
+  var dl1=new THREE.DirectionalLight(0xffffff,1.2);dl1.position.x=10;dl1.position.y=20;dl1.position.z=10;scene.add(dl1);
+  var dl2=new THREE.DirectionalLight(0x88bbff,0.5);dl2.position.x=-8;dl2.position.y=15;dl2.position.z=-8;scene.add(dl2);
+  var dl3=new THREE.DirectionalLight(0xffffff,0.3);dl3.position.x=0;dl3.position.y=10;dl3.position.z=15;scene.add(dl3);
+  if(animId)cancelAnimationFrame(animId);build3D();loop3D();
+}
+document.getElementById('wallOpacity').addEventListener('input',function(){wallOpacity=this.value/100;document.getElementById('wallOpacityVal').textContent=this.value+'%';updateWallOpacity();});
+var c3el=document.getElementById('cv3');
+c3el.addEventListener('mousedown',function(e){isDrag=true;lastMX=e.clientX;lastMY=e.clientY;});
+window.addEventListener('mouseup',function(){isDrag=false;});
+window.addEventListener('mousemove',function(e){if(!isDrag||currentView!=='3d')return;theta-=(e.clientX-lastMX)*0.006;phi-=(e.clientY-lastMY)*0.006;phi=Math.max(0.05,Math.min(1.4,phi));lastMX=e.clientX;lastMY=e.clientY;updateCam();});
+c3el.addEventListener('wheel',function(e){if(currentView!=='3d')return;rad+=e.deltaY*0.05;rad=Math.max(3,Math.min(120,rad));updateCam();});
+window.setView=function(mode){
+  currentView=mode;
+  document.getElementById('btn2d').classList.toggle('active',mode==='2d');document.getElementById('btn3d').classList.toggle('active',mode==='3d');
+  document.getElementById('cv').style.display=mode==='2d'?'block':'none';c3el.style.display=mode==='3d'?'block':'none';
+  document.getElementById('hint3d').style.display=mode==='3d'?'block':'none';document.getElementById('wallCtrl').style.display=mode==='3d'?'block':'none';document.getElementById('sideMenu').style.display=mode==='3d'?'flex':'none';
+  document.getElementById('takasa-field').classList.toggle('hidden',mode==='2d');
+  if(mode==='3d'){if(!renderer3)init3D();else build3D();}else draw2D();
+};
+function draw(){if(currentView==='2d')draw2D();else if(renderer3)build3D();}
+function resetDefaults(){
+  document.getElementById('maguchi').value=10000;document.getElementById('okuyuki').value=5200;document.getElementById('rensuu').value=4;document.getElementById('pattern').value='U字';document.getElementById('ujihaba').value=500;document.getElementById('ujihaba-field').style.display='';document.getElementById('hidari').value=250;document.getElementById('migi').value=250;document.getElementById('mae').value=200;document.getElementById('ushiro').value=1000;document.getElementById('linewidth').value=100;document.getElementById('takasa').value=2000;document.getElementById('wallOpacity').value=100;wallOpacity=1.0;document.getElementById('wallOpacityVal').textContent='100%';draw();
+}
+['maguchi','okuyuki','ujihaba','hidari','migi','mae','ushiro','linewidth','takasa'].forEach(function(id){document.getElementById(id).addEventListener('input',draw);});
+document.getElementById('rensuu').addEventListener('change',function(){var n=+this.value,lS=gv('hidari'),rS=gv('migi'),pat=document.getElementById('pattern').value;var eU=(pat==='I字')?gv('linewidth'):gv('ujihaba');document.getElementById('maguchi').value=n*2000+eU*(n-1)+lS+rS;draw();});
+document.getElementById('pattern').addEventListener('change',function(){document.getElementById('ujihaba-field').style.display=(this.value==='I字')?'none':'';draw();});
+document.getElementById('resetBtn').addEventListener('click',resetDefaults);
+document.getElementById('saveBtn').addEventListener('click',function(){var id=currentView==='2d'?'cv':'cv3',cv=document.getElementById(id);var a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download='parking_plan.png';a.click();});
+window.addEventListener('resize',function(){if(currentView==='2d')draw2D();else if(renderer3){var c=document.getElementById('cv3');c.width=document.getElementById('cwrap').offsetWidth||860;c.height=500;renderer3.setSize(c.width,c.height,false);camera.aspect=c.width/c.height;camera.updateProjectionMatrix();}});
+setTimeout(function(){draw2D();},80);
+})();
+</script>
