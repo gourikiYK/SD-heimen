@@ -23,6 +23,9 @@ body{font-family:'Hiragino Sans','Meiryo',sans-serif;color:var(--text);backgroun
 .metric .val{font-size:20px;font-weight:600;color:var(--accent)}
 .canvas-wrap{display:flex;justify-content:center;margin-bottom:12px;position:relative}
 canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width:100%}
+#cv{cursor:default}
+#cv.grabbing{cursor:grabbing}
+#cv.grab{cursor:grab}
 #cv3{display:none;border:.5px solid var(--border);border-radius:8px}
 .warn{font-size:13px;color:#e05555;margin-top:4px;margin-bottom:8px}
 .top-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:.5px solid var(--border)}
@@ -33,6 +36,9 @@ canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width
 .vbtn{flex:1;padding:8px;font-size:13px;font-weight:500;border:none;background:var(--bg3);color:var(--text2);cursor:pointer}
 .vbtn.active{background:var(--accent);color:#fff}
 .hint3d{position:absolute;top:8px;right:10px;font-size:11px;color:rgba(255,255,255,0.45);pointer-events:none;display:none;text-align:right;line-height:1.6}
+.manual-badge{display:none;align-items:center;gap:10px;padding:8px 12px;background:rgba(224,120,32,0.15);border:.5px solid rgba(224,120,32,0.4);border-radius:6px;font-size:12px;color:#e07820;margin-bottom:8px}
+.manual-badge.active{display:inline-flex}
+.manual-badge button{background:none;border:none;color:#e07820;cursor:pointer;text-decoration:underline;font-size:12px;padding:0}
 .side-menu{position:absolute;top:0;left:0;bottom:0;width:145px;background:rgba(10,20,35,0.92);border-right:0.5px solid rgba(255,255,255,0.12);border-radius:8px 0 0 8px;display:none;flex-direction:column;padding:10px 8px;gap:6px;overflow-y:auto}
 .smtitle{font-size:11px;color:rgba(200,220,240,0.55);letter-spacing:.05em;padding:0 2px;margin-top:2px}
 .car-btn{width:100%;padding:7px 9px;background:rgba(255,255,255,0.05);border:0.5px solid rgba(255,255,255,0.12);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:1px}
@@ -104,6 +110,10 @@ canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width
   </div>
 
   <div id="warn" class="warn" style="display:none"></div>
+  <div id="manualBadge" class="manual-badge">
+    <span>✏ ライン手動配置モード</span>
+    <button onclick="exitManual()">自動配置に戻す</button>
+  </div>
   <div id="metrics" class="metric-grid"></div>
 
   <div class="canvas-wrap" id="cwrap">
@@ -139,8 +149,8 @@ canvas{border:.5px solid var(--border);border-radius:8px;display:block;max-width
 'use strict';
 
 // ===== 定数 =====
-var SC=0.004;                       // mm→Three.js単位
-var PR_W=160, PR_H=110, PR_L=560;   // 車止め実寸(幅/高さ/長さ mm)
+var SC=0.004;
+var PR_W=160, PR_H=110, PR_L=560;
 var CAR_TYPES=[
   {name:'セダン',    W:1700, D:4500, H:1450, roofRatio:0.48, cabinZOff: 0.05, cabinDRatio:0.52},
   {name:'SUV',      W:1850, D:4600, H:1700, roofRatio:0.55, cabinZOff: 0.00, cabinDRatio:0.58},
@@ -155,29 +165,82 @@ var COLOR_HEX =['#2255aa','#cc3322','#228844','#888888','#111111','#ddddcc','#33
 var currentView='2d';
 var wallOpacity=1.0, wallMats=[];
 var scene, camera, renderer3, animId;
-var isDrag=false, lastMX=0, lastMY=0, theta=0.6, phi=0.45, rad=22;
+var isDrag3=false, lastMX=0, lastMY=0, theta=0.6, phi=0.45, rad=22;
 var selectedCar=0, selectedColor=0, carGroup=null, isAnimating=false, stopZ=0;
+
+// ===== ライン位置管理 =====
+// linePositions: ピット左端からのX座標(mm)昇順配列 (ライン中心位置)
+// U字: 長さ 2n [左外壁, 区画1右, 区画2左, 区画2右, ..., 区画n左, 右外壁]
+//      ペア構造: (0,1)区画1, (2,3)区画2, ..., (2n-2,2n-1)区画n
+//      U字は (1,2), (3,4), ..., (2n-3, 2n-2) ※区画間
+// I字: 長さ n+1
+var linePositions=null;
+var linePattern=null;
+var lineN=null;
+var manualMode=false;
 
 // ===== ユーティリティ =====
 function fmt(v){var r=Math.round(v*10)/10;return(r%1===0)?r.toString():r.toFixed(1)}
 function gv(id){return+document.getElementById(id).value}
-function getP(){
+function getBaseP(){
   var pat=document.getElementById('pattern').value, lw=gv('linewidth'), U=gv('ujihaba');
   var eU=(pat==='I字')?lw:U, L=gv('maguchi'), D=gv('okuyuki'), n=gv('rensuu');
   var lS=gv('hidari'), rS=gv('migi'), maeS=gv('mae'), ushiroS=gv('ushiro');
   var ku=(L-lS-rS-eU*(n-1))/n;
   return{L:L,D:D,n:n,pat:pat,U:U,lS:lS,rS:rS,maeS:maeS,ushiroS:ushiroS,lw:lw,eU:eU,ku:ku,H:gv('takasa')||2000};
 }
+
+// 自動配置からlinePositions(中心X mm)を生成
+function autoLinePositions(p){
+  var arr=[];
+  if(p.pat==='U字'){
+    // 左外壁: 元コードで「lSx-half」を中心とする線 → 中心X = lS - lw/2
+    arr.push(p.lS - p.lw/2);
+    for(var k=0;k<p.n-1;k++){
+      var gS=p.lS+(k+1)*p.ku+k*p.eU;
+      arr.push(gS + p.lw/2);
+      arr.push(gS + p.eU - p.lw/2);
+    }
+    arr.push((p.L - p.rS) + p.lw/2);
+  }else{
+    arr.push(p.lS - p.lw/2);
+    for(var k=0;k<p.n-1;k++){
+      arr.push(p.lS + (k+1)*p.ku + k*p.eU + p.eU/2);
+    }
+    arr.push((p.L - p.rS) + p.lw/2);
+  }
+  return arr;
+}
+
+function getLinePositions(p){
+  if(manualMode && linePositions && linePattern===p.pat && lineN===p.n){
+    return linePositions.slice();
+  }
+  return autoLinePositions(p);
+}
+
 function updateMetrics(p){
   var w=document.getElementById('warn');
-  if(p.ku<=0){w.style.display='block';w.textContent='区画幅が0以下になっています。';return false}
+  var b=document.getElementById('manualBadge');
+  b.classList.toggle('active', manualMode);
+
+  if(p.ku<=0 && !manualMode){w.style.display='block';w.textContent='区画幅が0以下になっています。';return false}
   w.style.display='none';
   var t=' mm</span></div></div>', s='<span style="font-size:12px;font-weight:400;color:var(--text2)">';
-  document.getElementById('metrics').innerHTML=
-    '<div class="metric"><div class="lbl">区画幅</div><div class="val">'+fmt(p.ku)+s+t+
-    '<div class="metric"><div class="lbl">ライン間隔</div><div class="val">'+fmt(p.ku+p.eU)+s+t+
-    '<div class="metric"><div class="lbl">ライン本数</div><div class="val">'+(p.n+1)+s+' 本</span></div></div>'+
-    '<div class="metric"><div class="lbl">連数</div><div class="val">'+p.n+s+' 連</span></div></div>';
+
+  if(manualMode){
+    var lineCount=linePositions?linePositions.length:0;
+    document.getElementById('metrics').innerHTML=
+      '<div class="metric"><div class="lbl">ライン本数</div><div class="val">'+lineCount+s+' 本</span></div></div>'+
+      '<div class="metric"><div class="lbl">連数</div><div class="val">'+p.n+s+' 連</span></div></div>'+
+      '<div class="metric" style="grid-column:span 2"><div class="lbl">モード</div><div class="val" style="font-size:14px;color:#e07820">手動配置（図上でラインをドラッグ）</div></div>';
+  }else{
+    document.getElementById('metrics').innerHTML=
+      '<div class="metric"><div class="lbl">区画幅</div><div class="val">'+fmt(p.ku)+s+t+
+      '<div class="metric"><div class="lbl">ライン間隔</div><div class="val">'+fmt(p.ku+p.eU)+s+t+
+      '<div class="metric"><div class="lbl">ライン本数</div><div class="val">'+(p.pat==='U字'?2*p.n:p.n+1)+s+' 本</span></div></div>'+
+      '<div class="metric"><div class="lbl">連数</div><div class="val">'+p.n+s+' 連</span></div></div>';
+  }
   return true;
 }
 
@@ -192,13 +255,18 @@ function dimSeg(ctx,xA,xB,y,label,color){
     ctx.beginPath();ctx.moveTo(xA,y);ctx.lineTo(xA+ah,y-ah/2);ctx.lineTo(xA+ah,y+ah/2);ctx.closePath();ctx.fill();
     ctx.beginPath();ctx.moveTo(xB,y);ctx.lineTo(xB-ah,y-ah/2);ctx.lineTo(xB-ah,y+ah/2);ctx.closePath();ctx.fill();
   }
-  ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.fillText(label,(xA+xB)/2,y+11);
+  if(label){
+    ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(label,(xA+xB)/2,y+11);
+  }
 }
 
+var draw2DCtx=null;
+
 function draw2D(){
-  var p=getP();if(!updateMetrics(p))return;
-  var L=p.L,D=p.D,n=p.n,pat=p.pat,lS=p.lS,rS=p.rS,maeS=p.maeS,ushiroS=p.ushiroS,ku=p.ku,eU=p.eU,lw=p.lw;
+  var p=getBaseP();if(!updateMetrics(p))return;
+  var L=p.L,D=p.D,n=p.n,pat=p.pat,lS=p.lS,rS=p.rS,maeS=p.maeS,ushiroS=p.ushiroS,lw=p.lw;
+  var positions=getLinePositions(p);
   var wall=250, cv=document.getElementById('cv');
   var marginL=95, marginR=50, marginT=20, marginB=105;
   var maxW=Math.min(860,cv.parentElement.offsetWidth-2);
@@ -220,31 +288,28 @@ function draw2D(){
   var sH=Math.max(3,pitH/20);
   for(var sy=pitY;sy<pitY+pitH;sy+=sH*2) ctx.fillRect(pitX,sy,pitW,sH);
 
-  // 補助線
-  var lSx=pitX+lS*scale, rSx=pitX+(L-rS)*scale;
+  // 補助線 (ushiro/mae)
   var ushiroSy=pitY+ushiroS*scale, maeSy=pitY+pitH-maeS*scale;
   ctx.strokeStyle='#aaa';ctx.setLineDash([4,3]);ctx.lineWidth=0.5;
-  ctx.beginPath();ctx.moveTo(lSx,pitY);ctx.lineTo(lSx,pitY+pitH);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(rSx,pitY);ctx.lineTo(rSx,pitY+pitH);ctx.stroke();
   ctx.beginPath();ctx.moveTo(pitX,ushiroSy);ctx.lineTo(pitX+pitW,ushiroSy);ctx.stroke();
   ctx.beginPath();ctx.moveTo(pitX,maeSy);ctx.lineTo(pitX+pitW,maeSy);ctx.stroke();
-  for(var k=0;k<n-1;k++){
-    var gS=lS+(k+1)*ku+k*eU;
-    ctx.beginPath();ctx.moveTo(pitX+gS*scale,pitY);ctx.lineTo(pitX+gS*scale,pitY+pitH);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(pitX+(gS+eU)*scale,pitY);ctx.lineTo(pitX+(gS+eU)*scale,pitY+pitH);ctx.stroke();
-  }
   ctx.setLineDash([]);
 
   // ラインパターン
-  var lineColor='#e07820', lineW=Math.min(Math.max(1,lw*scale),ku*scale), half=lineW/2;
+  var lineColor='#e07820', lineW=Math.max(1,lw*scale);
+  ctx.strokeStyle=lineColor;ctx.lineWidth=lineW;ctx.lineCap='butt';
+
   if(pat==='U字'){
-    ctx.strokeStyle=lineColor;ctx.lineWidth=lineW;
-    ctx.beginPath();ctx.moveTo(lSx-half,ushiroSy);ctx.lineTo(lSx-half,maeSy);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(rSx+half,ushiroSy);ctx.lineTo(rSx+half,maeSy);ctx.stroke();
+    // 外側2本 (i=0, i=2n-1) は直線
+    var cx0=pitX+positions[0]*scale, cxN=pitX+positions[positions.length-1]*scale;
+    ctx.beginPath();ctx.moveTo(cx0,ushiroSy);ctx.lineTo(cx0,maeSy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cxN,ushiroSy);ctx.lineTo(cxN,maeSy);ctx.stroke();
+    // U字ペア: (1,2), (3,4), ..., (2n-3, 2n-2)
     for(var k=0;k<n-1;k++){
-      var gS=lS+(k+1)*ku+k*eU;
-      var lx=pitX+gS*scale+half, rx=pitX+(gS+eU)*scale-half;
-      var r=Math.max(lineW,(rx-lx)/2), botY=maeSy-r;
+      var li=1+2*k, ri=li+1;
+      var lx=pitX+positions[li]*scale, rx=pitX+positions[ri]*scale;
+      var r=Math.max(lineW,(rx-lx)/2);
+      var botY=maeSy-r;
       ctx.lineJoin='round';
       ctx.beginPath();
       ctx.moveTo(lx,ushiroSy);ctx.lineTo(lx,botY);
@@ -252,24 +317,25 @@ function draw2D(){
       ctx.lineTo(rx,ushiroSy);ctx.stroke();
     }
   }else{
-    var allPos=[lS,L-rS];
-    for(var k=0;k<n-1;k++) allPos.push(lS+(k+1)*ku+k*eU+eU/2);
-    for(var i=0;i<allPos.length;i++){
-      var pos=allPos[i];
-      var cxp=(i===0)?pitX+pos*scale-half:(i===1)?pitX+pos*scale+half:pitX+pos*scale;
-      ctx.strokeStyle=lineColor;ctx.lineWidth=lineW;
-      ctx.beginPath();ctx.moveTo(cxp,ushiroSy);ctx.lineTo(cxp,maeSy);ctx.stroke();
+    for(var i=0;i<positions.length;i++){
+      var cx=pitX+positions[i]*scale;
+      ctx.beginPath();ctx.moveTo(cx,ushiroSy);ctx.lineTo(cx,maeSy);ctx.stroke();
     }
   }
 
-  // 車止め＋反射板
-  for(var k=0;k<n;k++){
-    var sLx2=pitX+(lS+k*(ku+eU))*scale, sRx2=pitX+(lS+k*(ku+eU)+ku)*scale;
+  // 車止め＋反射板 (各区画中央に配置)
+  var segPairs=[];
+  if(pat==='U字'){
+    for(var k=0;k<n;k++) segPairs.push([positions[2*k], positions[2*k+1]]);
+  }else{
+    for(var k=0;k<n;k++) segPairs.push([positions[k], positions[k+1]]);
+  }
+  for(var k=0;k<segPairs.length;k++){
+    var sLx2=pitX+segPairs[k][0]*scale, sRx2=pitX+segPairs[k][1]*scale;
     var off=50*scale, sw2=560*scale, sh2=160*scale;
     [sLx2+off+sw2/2, sRx2-off-sw2/2].forEach(function(cx){
       var sx=cx-sw2/2, sy2=ushiroSy;
       ctx.fillStyle='#111';ctx.fillRect(sx,sy2,sw2,sh2);
-      // 反射板: 前スキマ側斜面(53mm範囲の中央)に40mm幅で配置
       var rw=sw2*0.72, rh=sh2*(40/160), rx2=cx-rw/2;
       var ry2=sy2+sh2 - 53.5*(sh2/160) - rh/2;
       ctx.fillStyle='#333';ctx.fillRect(rx2-1,ry2-1,rw+2,rh+2);
@@ -278,21 +344,42 @@ function draw2D(){
     });
   }
 
-  // 個別寸法・間口総寸法
-  var dimY1=pitY+pitH+35, curX=pitX;
-  dimSeg(ctx,curX,curX+lS*scale,dimY1,fmt(lS),'#555');curX+=lS*scale;
-  for(var k=0;k<n;k++){
-    dimSeg(ctx,curX,curX+ku*scale,dimY1,fmt(ku),'#1a6b9e');curX+=ku*scale;
-    if(k<n-1){dimSeg(ctx,curX,curX+eU*scale,dimY1,fmt(eU),'#c87000');curX+=eU*scale;}
+  // 個別寸法
+  var dimY1=pitY+pitH+35;
+  if(pat==='U字'){
+    // 左スキマ: pitX〜(positions[0]+lw/2) ※外壁ラインの内側エッジまで
+    dimSeg(ctx,pitX,pitX+(positions[0]+lw/2)*scale,dimY1,fmt(positions[0]+lw/2),'#555');
+    for(var k=0;k<n;k++){
+      var segL=positions[2*k]+lw/2, segR=positions[2*k+1]-lw/2;
+      dimSeg(ctx,pitX+segL*scale,pitX+segR*scale,dimY1,fmt(segR-segL),'#1a6b9e');
+      if(k<n-1){
+        // U字幅: 区画間の中心線間距離
+        var uxL=positions[2*k+1], uxR=positions[2*k+2];
+        dimSeg(ctx,pitX+uxL*scale,pitX+uxR*scale,dimY1,fmt(uxR-uxL),'#c87000');
+      }
+    }
+    // 右スキマ
+    dimSeg(ctx,pitX+(positions[positions.length-1]-lw/2)*scale,pitX+pitW,dimY1,fmt(L-(positions[positions.length-1]-lw/2)),'#555');
+  }else{
+    // I字
+    dimSeg(ctx,pitX,pitX+(positions[0]+lw/2)*scale,dimY1,fmt(positions[0]+lw/2),'#555');
+    for(var k=0;k<n;k++){
+      var a=positions[k], b=positions[k+1];
+      var segL=(k===0)?a+lw/2:a;
+      var segR=(k===n-1)?b-lw/2:b;
+      dimSeg(ctx,pitX+segL*scale,pitX+segR*scale,dimY1,fmt(segR-segL),'#1a6b9e');
+    }
+    dimSeg(ctx,pitX+(positions[n]-lw/2)*scale,pitX+pitW,dimY1,fmt(L-(positions[n]-lw/2)),'#555');
   }
-  dimSeg(ctx,curX,pitX+pitW,dimY1,fmt(rS),'#555');
+
+  // 間口総寸法
   var dimY2=dimY1+38;
   ctx.strokeStyle='#555';ctx.lineWidth=0.5;
   ctx.beginPath();ctx.moveTo(pitX,pitY+pitH+6);ctx.lineTo(pitX,dimY2+6);ctx.stroke();
   ctx.beginPath();ctx.moveTo(pitX+pitW,pitY+pitH+6);ctx.lineTo(pitX+pitW,dimY2+6);ctx.stroke();
   dimSeg(ctx,pitX,pitX+pitW,dimY2,'ピット間口 '+fmt(L),'#222');
 
-  // 奥行き寸法(左側縦)
+  // 奥行き寸法
   var ah=4, dX=ox-14;
   ctx.strokeStyle='#222';ctx.fillStyle='#222';ctx.lineWidth=0.8;
   ctx.beginPath();ctx.moveTo(dX,pitY);ctx.lineTo(dX,pitY+pitH);ctx.stroke();
@@ -305,7 +392,7 @@ function draw2D(){
   ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#222';
   ctx.fillText('ピット奥行き '+fmt(D),0,0);ctx.restore();
 
-  // 後スキマ寸法(右側縦)
+  // 後スキマ寸法
   var dX2=ox+outerW+12;
   ctx.strokeStyle='#555';ctx.fillStyle='#555';ctx.lineWidth=0.8;
   ctx.beginPath();ctx.moveTo(dX2,pitY);ctx.lineTo(dX2,ushiroSy);ctx.stroke();
@@ -317,7 +404,150 @@ function draw2D(){
   ctx.save();ctx.translate(dX2+10,pitY+ushiroS*scale/2);ctx.rotate(-Math.PI/2);
   ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#555';
   ctx.fillText('後スキマ '+fmt(ushiroS),0,0);ctx.restore();
+
+  draw2DCtx={pitX:pitX, pitY:pitY, pitW:pitW, pitH:pitH, scale:scale, ushiroSy:ushiroSy, maeSy:maeSy, p:p, positions:positions};
 }
+
+// ===== 2D マウス操作 =====
+var dragIdx=-1;
+function hitTestLine(mx,my){
+  if(!draw2DCtx) return -1;
+  var c=draw2DCtx;
+  if(my<c.ushiroSy-5 || my>c.maeSy+5) return -1;
+  var tol=6;
+  var best=-1, bestDist=tol+1;
+  for(var i=0;i<c.positions.length;i++){
+    var lx=c.pitX+c.positions[i]*c.scale;
+    var d=Math.abs(mx-lx);
+    if(d<=tol && d<bestDist){ best=i; bestDist=d; }
+  }
+  return best;
+}
+function canvasXY(evt){
+  var cv=document.getElementById('cv');
+  var rect=cv.getBoundingClientRect();
+  var sx=cv.width/rect.width, sy=cv.height/rect.height;
+  return {x:(evt.clientX-rect.left)*sx, y:(evt.clientY-rect.top)*sy};
+}
+
+// ドラッグ対象: U字ならペア単位、I字なら単独。
+// getDragGroup(idx, pat, n): ドラッグ対象の[startIdx, endIdx](両端含む)を返す
+function getDragGroup(idx, pat, n){
+  if(pat==='U字'){
+    // i=0: 単独(左外壁)
+    if(idx===0) return [0,0];
+    // i=2n-1: 単独(右外壁)
+    if(idx===2*n-1) return [2*n-1, 2*n-1];
+    // それ以外: ペア。奇数インデックスなら (idx, idx+1)、偶数なら (idx-1, idx)
+    if(idx%2===1) return [idx, idx+1];
+    return [idx-1, idx];
+  }
+  // I字: 単独
+  return [idx, idx];
+}
+
+function setup2DMouse(){
+  var cv=document.getElementById('cv');
+  cv.addEventListener('mousemove', function(e){
+    if(currentView!=='2d')return;
+    var pt=canvasXY(e);
+    if(dragIdx>=0){
+      if(!manualMode){
+        var p0=getBaseP();
+        linePositions=autoLinePositions(p0);
+        linePattern=p0.pat; lineN=p0.n;
+        manualMode=true;
+      }
+      var c=draw2DCtx;
+      var pointerX=(pt.x - c.pitX)/c.scale;
+      var minGap=c.p.lw;
+      var grp=getDragGroup(dragIdx, c.p.pat, c.p.n);
+      var gStart=grp[0], gEnd=grp[1];
+      // グループ全体の変位 = ポインタ位置 - 掴んだラインの元位置
+      var delta=pointerX - linePositions[dragIdx];
+      // 左制約: グループ先頭がグループ外の左隣 + minGap を下回らない
+      var lo=(gStart>0)?linePositions[gStart-1]+minGap:minGap/2;
+      // 右制約: グループ末尾がグループ外の右隣 - minGap を超えない
+      var hi=(gEnd<linePositions.length-1)?linePositions[gEnd+1]-minGap:c.p.L-minGap/2;
+      // delta の最小/最大制約
+      var minDelta=lo - linePositions[gStart];
+      var maxDelta=hi - linePositions[gEnd];
+      delta=Math.max(minDelta, Math.min(maxDelta, delta));
+      for(var gi=gStart; gi<=gEnd; gi++){
+        linePositions[gi]+=delta;
+      }
+      draw2D();
+      cv.classList.add('grabbing');
+    }else{
+      var idx=hitTestLine(pt.x, pt.y);
+      cv.classList.remove('grabbing');
+      if(idx>=0) cv.classList.add('grab');
+      else cv.classList.remove('grab');
+    }
+  });
+  cv.addEventListener('mousedown', function(e){
+    if(currentView!=='2d')return;
+    var pt=canvasXY(e);
+    var idx=hitTestLine(pt.x, pt.y);
+    if(idx>=0){
+      dragIdx=idx;
+      cv.classList.add('grabbing');
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('mouseup', function(){
+    if(dragIdx>=0){
+      dragIdx=-1;
+      document.getElementById('cv').classList.remove('grabbing');
+    }
+  });
+  // タッチ対応
+  cv.addEventListener('touchstart', function(e){
+    if(currentView!=='2d'||e.touches.length!==1)return;
+    var t=e.touches[0];
+    var rect=cv.getBoundingClientRect();
+    var sx=cv.width/rect.width, sy=cv.height/rect.height;
+    var pt={x:(t.clientX-rect.left)*sx, y:(t.clientY-rect.top)*sy};
+    var idx=hitTestLine(pt.x, pt.y);
+    if(idx>=0){dragIdx=idx; e.preventDefault();}
+  }, {passive:false});
+  cv.addEventListener('touchmove', function(e){
+    if(currentView!=='2d'||dragIdx<0||e.touches.length!==1)return;
+    var t=e.touches[0];
+    var rect=cv.getBoundingClientRect();
+    var sx=cv.width/rect.width, sy=cv.height/rect.height;
+    var pt={x:(t.clientX-rect.left)*sx, y:(t.clientY-rect.top)*sy};
+    if(!manualMode){
+      var p0=getBaseP();
+      linePositions=autoLinePositions(p0);
+      linePattern=p0.pat; lineN=p0.n;
+      manualMode=true;
+    }
+    var c=draw2DCtx;
+    var pointerX=(pt.x - c.pitX)/c.scale;
+    var minGap=c.p.lw;
+    var grp=getDragGroup(dragIdx, c.p.pat, c.p.n);
+    var gStart=grp[0], gEnd=grp[1];
+    var delta=pointerX - linePositions[dragIdx];
+    var lo=(gStart>0)?linePositions[gStart-1]+minGap:minGap/2;
+    var hi=(gEnd<linePositions.length-1)?linePositions[gEnd+1]-minGap:c.p.L-minGap/2;
+    var minDelta=lo - linePositions[gStart];
+    var maxDelta=hi - linePositions[gEnd];
+    delta=Math.max(minDelta, Math.min(maxDelta, delta));
+    for(var gi=gStart; gi<=gEnd; gi++){
+      linePositions[gi]+=delta;
+    }
+    draw2D();
+    e.preventDefault();
+  }, {passive:false});
+  cv.addEventListener('touchend', function(){dragIdx=-1;});
+}
+
+window.exitManual=function(){
+  manualMode=false;
+  linePositions=null;
+  draw();
+};
 
 // ===== 3D: テクスチャ =====
 function makeConcreteTexture(){
@@ -344,23 +574,17 @@ function makeCar3D(typeIdx, colorHex, sc){
   var g=new THREE.Group();
   var bodyMat=new THREE.MeshStandardMaterial({color:colorHex,roughness:0.35,metalness:0.4});
   var tR=cH*0.13, tW=cW*0.11, lift=tR*1.05;
-
-  // 車体下部＋キャビン
   var loH=cH*(1-t.roofRatio);
   var lo=new THREE.Mesh(new THREE.BoxGeometry(cW,loH,cD),bodyMat);
   lo.position.y=loH/2+lift;g.add(lo);
   var cabW=cW*0.94, cabH=cH*t.roofRatio, cabD=cD*t.cabinDRatio, cabZOff=cD*t.cabinZOff;
   var cab=new THREE.Mesh(new THREE.BoxGeometry(cabW,cabH,cabD),bodyMat);
   cab.position.set(0,loH+cabH/2+lift,cabZOff);g.add(cab);
-
-  // ガラス(フロント/リア)
   var glassMat=new THREE.MeshStandardMaterial({color:0x99ccee,transparent:true,opacity:0.55});
   var fg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.88,cabH*0.7,0.01),glassMat);
   fg.position.set(0,loH+cabH*0.5+lift,cabZOff+cabD/2);g.add(fg);
   var rg=new THREE.Mesh(new THREE.BoxGeometry(cabW*0.82,cabH*0.62,0.01),glassMat);
   rg.position.set(0,loH+cabH*0.5+lift,cabZOff-cabD/2);g.add(rg);
-
-  // タイヤ4輪
   var tCX=cW/2-tW/2-cW*0.01;
   var tireMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.9});
   var rimMat=new THREE.MeshStandardMaterial({color:0xb0b0b0,metalness:0.7});
@@ -370,8 +594,6 @@ function makeCar3D(typeIdx, colorHex, sc){
     var rim=new THREE.Mesh(new THREE.CylinderGeometry(tR*0.58,tR*0.58,tW+0.002,12),rimMat);
     rim.rotation.z=Math.PI/2;rim.position.set(pos[0],pos[1],pos[2]);g.add(rim);
   });
-
-  // ライト・ナンバー
   var tailMat=new THREE.MeshStandardMaterial({color:0xff2200,emissive:0x550000});
   var headMat=new THREE.MeshStandardMaterial({color:0xffffdd,emissive:0x222200});
   [-1,1].forEach(function(s){
@@ -386,12 +608,26 @@ function makeCar3D(typeIdx, colorHex, sc){
   return g;
 }
 
-// ===== 3D: 車止め形状(断面: 底±80〜Y45垂直, Y45-110で±80→±27傾斜) =====
 function makeRubberStopperGeo(length){
   var shape=new THREE.Shape();
   shape.moveTo(80,0);shape.lineTo(80,45);shape.lineTo(27,110);
   shape.lineTo(-27,110);shape.lineTo(-80,45);shape.lineTo(-80,0);shape.lineTo(80,0);
   return new THREE.ExtrudeGeometry(shape,{depth:1,bevelEnabled:false});
+}
+
+function makeHalfRingMesh(cx, cz, rMid, lwSc, thick, mat){
+  var rOut=rMid+lwSc/2, rIn=Math.max(0.001,rMid-lwSc/2);
+  var shape=new THREE.Shape();
+  shape.moveTo(rOut,0);
+  shape.absarc(0,0,rOut,0,-Math.PI,true);
+  shape.lineTo(-rIn,0);
+  shape.absarc(0,0,rIn,-Math.PI,0,false);
+  shape.lineTo(rOut,0);
+  var geo=new THREE.ExtrudeGeometry(shape,{depth:thick,bevelEnabled:false,curveSegments:24});
+  var m=new THREE.Mesh(geo,mat);
+  m.rotation.x=-Math.PI/2;
+  m.position.set(cx, 0, cz);
+  return m;
 }
 
 // ===== 3D: シーン構築 =====
@@ -400,15 +636,15 @@ function build3D(){
   wallMats=[];carGroup=null;isAnimating=false;
   document.getElementById('placeBtn').disabled=false;
   while(scene.children.length>4) scene.remove(scene.children[4]);
-  var p=getP();if(!updateMetrics(p))return;
-  var L=p.L,D=p.D,n=p.n,pat=p.pat,lS=p.lS,rS=p.rS,maeS=p.maeS,ushiroS=p.ushiroS,ku=p.ku,eU=p.eU,lw=p.lw,H=p.H;
+  var p=getBaseP();if(!updateMetrics(p))return;
+  var positions=getLinePositions(p);
+  var L=p.L,D=p.D,n=p.n,pat=p.pat,lS=p.lS,rS=p.rS,maeS=p.maeS,ushiroS=p.ushiroS,lw=p.lw,H=p.H;
   var wall=250, wallH=H*SC, wallT=wall*SC;
   var totalW=(L+wall*2)*SC, totalD=(D+wall*2)*SC;
   var pitOX=(-L/2)*SC, pitOZ=(-D/2)*SC;
 
   scene.add(new THREE.GridHelper(80,80,0x1a3a5a,0x152a45));
 
-  // 外壁4面
   [[totalW,wallH,wallT,0,wallH/2,-totalD/2+wallT/2],
    [totalW,wallH,wallT,0,wallH/2,totalD/2-wallT/2],
    [wallT,wallH,totalD,-totalW/2+wallT/2,wallH/2,0],
@@ -420,7 +656,6 @@ function build3D(){
     m.position.set(w[3],w[4],w[5]);scene.add(m);
   });
 
-  // 床面(外・ピット)
   var stex=makeConcreteTexture();stex.repeat.set(4,4);
   var sf=new THREE.Mesh(new THREE.BoxGeometry(totalW,0.04,totalD),
     new THREE.MeshStandardMaterial({map:stex,color:0xb2b0a8,roughness:0.88}));
@@ -437,50 +672,65 @@ function build3D(){
   }
 
   // ライン
-  var lineH3=0.05, lwSc=lw*SC, ushZ=pitOZ+ushiroS*SC, maeZ=pitOZ+(D-maeS)*SC, baseY=wallH+0.04;
+  var lineH3=0.1*SC, lwSc=lw*SC, ushZ=pitOZ+ushiroS*SC, maeZ=pitOZ+(D-maeS)*SC, baseY=wallH+0.04;
+  var lineY=baseY+0.001;
   var lineMat=new THREE.MeshStandardMaterial({color:0xe07820,roughness:0.3,emissive:0x331500});
-  function addLine(x,z,w,d){
-    var m=new THREE.Mesh(new THREE.BoxGeometry(w,lineH3,d),lineMat);
-    m.position.set(x+w/2,baseY+lineH3/2,z+d/2);scene.add(m);
+  function addLine(cx,z,d){
+    var m=new THREE.Mesh(new THREE.BoxGeometry(lwSc,lineH3,d),lineMat);
+    m.position.set(cx,lineY+lineH3/2,z+d/2);scene.add(m);
   }
-  if(pat==='U字'){
-    addLine(pitOX+lS*SC-lwSc,ushZ,lwSc,maeZ-ushZ);
-    addLine(pitOX+(L-rS)*SC,ushZ,lwSc,maeZ-ushZ);
-    for(var k=0;k<n-1;k++){
-      var gS=lS+(k+1)*ku+k*eU, lx3=pitOX+gS*SC, rx3=pitOX+(gS+eU)*SC;
-      addLine(lx3,ushZ,lwSc,maeZ-ushZ);
-      addLine(rx3-lwSc,ushZ,lwSc,maeZ-ushZ);
-      addLine(lx3,maeZ,rx3-lx3,lwSc);
-    }
-  }else{
-    var allPos=[lS,L-rS];
-    for(var k=0;k<n-1;k++) allPos.push(lS+(k+1)*ku+k*eU+eU/2);
-    allPos.forEach(function(pos,i){
-      var lx4=(i===0)?pitOX+pos*SC-lwSc:(i===1)?pitOX+pos*SC:pitOX+pos*SC-lwSc/2;
-      addLine(lx4,ushZ,lwSc,maeZ-ushZ);
-    });
+  function addHalfRing(cx,cz,rMid){
+    var m=makeHalfRingMesh(cx,cz,rMid,lwSc,lineH3,lineMat);
+    m.position.y=lineY;
+    scene.add(m);
   }
 
-  // 車止め＋反射テープ
+  if(pat==='U字'){
+    addLine(pitOX+positions[0]*SC, ushZ, maeZ-ushZ);
+    addLine(pitOX+positions[positions.length-1]*SC, ushZ, maeZ-ushZ);
+    for(var k=0;k<n-1;k++){
+      var lxC=pitOX+positions[1+2*k]*SC;
+      var rxC=pitOX+positions[2+2*k]*SC;
+      var rMid=(rxC-lxC)/2;
+      if(rMid<lwSc) rMid=lwSc;
+      var cx=(lxC+rxC)/2;
+      var arcCZ=maeZ-rMid;
+      var vLen=arcCZ-ushZ;
+      if(vLen>0){
+        addLine(lxC, ushZ, vLen);
+        addLine(rxC, ushZ, vLen);
+      }
+      addHalfRing(cx, arcCZ, rMid);
+    }
+  }else{
+    for(var i=0;i<positions.length;i++){
+      addLine(pitOX+positions[i]*SC, ushZ, maeZ-ushZ);
+    }
+  }
+
+  // 車止め
   var rubberMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.75,metalness:0.05});
   var tapeMat=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.35,metalness:0.2,emissive:0x332100,side:THREE.DoubleSide});
   var prLen=PR_L*SC, prWsc=PR_W*SC, off2=50*SC;
-  // 斜面の幾何(前スキマ側=+Z側): 鉛直傾斜角・中央座標
   var slopeAngle=Math.atan2(80-27,110-45);
   var slopeLenMM=Math.sqrt((80-27)*(80-27)+(110-45)*(110-45));
   var slopeMidX=(80+27)/2, slopeMidY=(45+110)/2, eps=0.001;
 
-  for(var k=0;k<n;k++){
-    var sLx=pitOX+(lS+k*(ku+eU))*SC, sRx=pitOX+(lS+k*(ku+eU)+ku)*SC;
+  var segPairs3=[];
+  if(pat==='U字'){
+    for(var k=0;k<n;k++) segPairs3.push([positions[2*k], positions[2*k+1]]);
+  }else{
+    for(var k=0;k<n;k++) segPairs3.push([positions[k], positions[k+1]]);
+  }
+  for(var k=0;k<segPairs3.length;k++){
+    var sLx=pitOX+segPairs3[k][0]*SC, sRx=pitOX+segPairs3[k][1]*SC;
     [sLx+off2+prLen/2, sRx-off2-prLen/2].forEach(function(cx){
-      // 本体
       var rg=makeRubberStopperGeo(prLen);
       rg.scale(SC,SC,prLen);rg.translate(0,0,-prLen/2);
       var rubber=new THREE.Mesh(rg,rubberMat);
       rubber.rotation.y=-Math.PI/2;
       rubber.position.set(cx,baseY,ushZ+prWsc/2);
       scene.add(rubber);
-      // 反射テープ(前スキマ側斜面に面合わせ)
       var tape=new THREE.Mesh(new THREE.PlaneGeometry(prLen*0.72,slopeLenMM*0.75*SC),tapeMat);
       tape.rotation.x=-(Math.PI/2-slopeAngle);
       var ny=Math.cos(slopeAngle), nz=Math.sin(slopeAngle);
@@ -491,7 +741,6 @@ function build3D(){
   rad=Math.max(totalW,totalD)*3.2+wallH*1.5+4;updateCam();
 }
 
-// ===== 3D: カメラ・ループ・初期化 =====
 function updateCam(){
   if(!camera)return;
   var wallH=(gv('takasa')||2000)*SC, lookY=wallH/2;
@@ -517,7 +766,6 @@ function init3D(){
   renderer3.setSize(c.width,c.height,false);renderer3.setClearColor(0x0d1b2a);
   scene=new THREE.Scene();
   camera=new THREE.PerspectiveCamera(50,c.width/c.height,0.1,2000);
-  // ライト4灯(build3Dで削除されない)
   scene.add(new THREE.AmbientLight(0xffffff,0.55));
   var dl1=new THREE.DirectionalLight(0xffffff,1.2);dl1.position.set(10,20,10);scene.add(dl1);
   var dl2=new THREE.DirectionalLight(0x88bbff,0.5);dl2.position.set(-8,15,-8);scene.add(dl2);
@@ -526,7 +774,7 @@ function init3D(){
   build3D();loop3D();
 }
 
-// ===== 車両配置(3D) =====
+// ===== 車両配置 =====
 window.selectCar=function(i){
   selectedCar=i;
   document.querySelectorAll('.car-btn').forEach(function(b,j){b.classList.toggle('active',j===i);});
@@ -534,13 +782,17 @@ window.selectCar=function(i){
 window.placeCar=function(){
   if(isAnimating)return;
   if(carGroup){scene.remove(carGroup);carGroup=null;}
-  var p=getP();if(p.ku<=0)return;
+  var p=getBaseP();
+  var positions=getLinePositions(p);
   var wallH=p.H*SC, baseY=wallH+0.04;
   var pitOZ=(-p.D/2)*SC, pitOX=(-p.L/2)*SC;
   var ushZ=pitOZ+p.ushiroS*SC, maeZ=pitOZ+(p.D-p.maeS)*SC;
-  var carCX=pitOX+(p.lS+p.ku/2)*SC;
+  // 1区画目の中心
+  var segL, segR;
+  if(p.pat==='U字'){ segL=positions[0]; segR=positions[1]; }
+  else { segL=positions[0]; segR=positions[1]; }
+  var carCX=pitOX+((segL+segR)/2)*SC;
   var t=CAR_TYPES[selectedCar], cD=t.D*SC, tR=t.H*SC*0.13, prWsc=PR_W*SC;
-  // 後タイヤが車止めの前スキマ側垂直壁に当たって停止
   stopZ=ushZ+prWsc+tR+cD*0.3;
   carGroup=makeCar3D(selectedCar,CAR_COLORS[selectedColor],SC);
   carGroup.position.set(carCX,baseY,maeZ+cD*1.2);
@@ -560,7 +812,7 @@ function updateWallOpacity(){
   });
 }
 
-// ===== ビュー切替・リセット =====
+// ===== ビュー切替 =====
 window.setView=function(mode){
   currentView=mode;
   document.getElementById('btn2d').classList.toggle('active',mode==='2d');
@@ -575,6 +827,7 @@ window.setView=function(mode){
 };
 function draw(){if(currentView==='2d')draw2D();else if(renderer3)build3D();}
 function resetDefaults(){
+  manualMode=false;linePositions=null;
   document.getElementById('maguchi').value=10000;document.getElementById('okuyuki').value=5200;
   document.getElementById('rensuu').value=4;document.getElementById('pattern').value='U字';
   document.getElementById('ujihaba').value=500;document.getElementById('ujihaba-field').style.display='';
@@ -587,7 +840,6 @@ function resetDefaults(){
 }
 
 // ===== 初期化・イベント =====
-// カラードット生成
 var colorRow=document.getElementById('colorRow');
 COLOR_HEX.forEach(function(c,i){
   var d=document.createElement('div');
@@ -600,19 +852,17 @@ COLOR_HEX.forEach(function(c,i){
   colorRow.appendChild(d);
 });
 
-// 外壁透明度
 document.getElementById('wallOpacity').addEventListener('input',function(){
   wallOpacity=this.value/100;
   document.getElementById('wallOpacityVal').textContent=this.value+'%';
   updateWallOpacity();
 });
 
-// 3Dビューのマウス操作
 var c3el=document.getElementById('cv3');
-c3el.addEventListener('mousedown',function(e){isDrag=true;lastMX=e.clientX;lastMY=e.clientY;});
-window.addEventListener('mouseup',function(){isDrag=false;});
+c3el.addEventListener('mousedown',function(e){isDrag3=true;lastMX=e.clientX;lastMY=e.clientY;});
+window.addEventListener('mouseup',function(){isDrag3=false;});
 window.addEventListener('mousemove',function(e){
-  if(!isDrag||currentView!=='3d')return;
+  if(!isDrag3||currentView!=='3d')return;
   theta-=(e.clientX-lastMX)*0.006;phi-=(e.clientY-lastMY)*0.006;
   phi=Math.max(0.05,Math.min(1.4,phi));
   lastMX=e.clientX;lastMY=e.clientY;updateCam();
@@ -622,29 +872,32 @@ c3el.addEventListener('wheel',function(e){
   rad+=e.deltaY*0.05;rad=Math.max(3,Math.min(120,rad));updateCam();
 });
 
-// 入力変更で再描画
+// 数値入力変更時: 手動モードを解除
 ['maguchi','okuyuki','ujihaba','hidari','migi','mae','ushiro','linewidth','takasa'].forEach(function(id){
-  document.getElementById(id).addEventListener('input',draw);
+  document.getElementById(id).addEventListener('input',function(){
+    if(manualMode){manualMode=false;linePositions=null;}
+    draw();
+  });
 });
-// 連数変更: ピット間口を自動計算
 document.getElementById('rensuu').addEventListener('change',function(){
+  if(manualMode){manualMode=false;linePositions=null;}
   var n=+this.value, lS=gv('hidari'), rS=gv('migi');
   var pat=document.getElementById('pattern').value;
   var eU=(pat==='I字')?gv('linewidth'):gv('ujihaba');
   document.getElementById('maguchi').value=n*2000+eU*(n-1)+lS+rS;draw();
 });
-// パターン変更: U字幅欄の表示切替
 document.getElementById('pattern').addEventListener('change',function(){
+  if(manualMode){manualMode=false;linePositions=null;}
   document.getElementById('ujihaba-field').style.display=(this.value==='I字')?'none':'';draw();
 });
-// リセット・PNG保存
+
 document.getElementById('resetBtn').addEventListener('click',resetDefaults);
 document.getElementById('saveBtn').addEventListener('click',function(){
   var id=(currentView==='2d')?'cv':'cv3', cv=document.getElementById(id);
   var a=document.createElement('a');
   a.href=cv.toDataURL('image/png');a.download='parking_plan.png';a.click();
 });
-// リサイズ
+
 window.addEventListener('resize',function(){
   if(currentView==='2d'){draw2D();}
   else if(renderer3){
@@ -654,7 +907,8 @@ window.addEventListener('resize',function(){
     camera.aspect=c.width/c.height;camera.updateProjectionMatrix();
   }
 });
-// 初回描画
+
+setup2DMouse();
 setTimeout(function(){draw2D();},80);
 })();
 </script>
