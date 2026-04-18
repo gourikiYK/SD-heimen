@@ -278,7 +278,7 @@ function draw2D(){
       var segL=positions[2*k]+lw/2, segR=positions[2*k+1]-lw/2;
       dimSeg(ctx,pitX+segL*scale,pitX+segR*scale,dimY1,fmt(segR-segL),'#1a6b9e');
       if(k<n-1){
-        var uxL=positions[2*k+1], uxR=positions[2*k+2]; dimSeg(ctx,pitX+uxL*scale,pitX+uxR*scale,dimY1,fmt(uxR-uxL),'#c87000');
+        var uxL=positions[2*k+1]-lw/2, uxR=positions[2*k+2]+lw/2; dimSeg(ctx,pitX+uxL*scale,pitX+uxR*scale,dimY1,fmt(uxR-uxL),'#c87000');
       }
     }
     dimSeg(ctx,pitX+(positions[positions.length-1]-lw/2)*scale,pitX+pitW,dimY1,fmt(L-(positions[positions.length-1]-lw/2)),'#555');
