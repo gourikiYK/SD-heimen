@@ -285,8 +285,9 @@ function draw2D(){
   }else{
     dimSeg(ctx,pitX,pitX+(positions[0]+lw/2)*scale,dimY1,fmt(positions[0]+lw/2),'#555');
     for(var k=0;k<n;k++){
-      var a=positions[k], b=positions[k+1]; var segL=(k===0)?a+lw/2:a; var segR=(k===n-1)?b-lw/2:b;
-      dimSeg(ctx,pitX+segL*scale,pitX+segR*scale,dimY1,fmt(segR-segL),'#1a6b9e');
+      var xL=positions[k]+lw/2, xR=positions[k+1]-lw/2;
+      dimSeg(ctx,pitX+xL*scale,pitX+xR*scale,dimY1,fmt(xR-xL),'#1a6b9e');
+      if(k<n-1) dimSeg(ctx,pitX+(positions[k+1]-lw/2)*scale,pitX+(positions[k+1]+lw/2)*scale,dimY1,fmt(lw),'#c87000');
     }
     dimSeg(ctx,pitX+(positions[n]-lw/2)*scale,pitX+pitW,dimY1,fmt(L-(positions[n]-lw/2)),'#555');
   }
