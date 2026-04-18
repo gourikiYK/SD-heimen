@@ -263,7 +263,7 @@ function draw2D(){
     for(var k=0;k<n;k++) segPairs.push([positions[k], positions[k+1]]);
   }
   for(var k=0;k<segPairs.length;k++){
-    var sLx2=pitX+segPairs[k][0]*scale, sRx2=pitX+segPairs[k][1]*scale; var off=50*scale, sw2=560*scale, sh2=160*scale;
+    var sLx2=pitX+segPairs[k][0]*scale, sRx2=pitX+segPairs[k][1]*scale; var off=(lw/2+50)*scale, sw2=560*scale, sh2=160*scale;
     [sLx2+off+sw2/2, sRx2-off-sw2/2].forEach(function(cx){
       var sx=cx-sw2/2, sy2=ushiroSy; ctx.fillStyle='#111';ctx.fillRect(sx,sy2,sw2,sh2);
       var rw=sw2*0.72, rh=sh2*(40/160), rx2=cx-rw/2; var ry2=sy2+sh2 - 53.5*(sh2/160) - rh/2;
@@ -503,7 +503,7 @@ function build3D(){
   }
   var rubberMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.75,metalness:0.05});
   var tapeMat=new THREE.MeshStandardMaterial({color:0xf5c200,roughness:0.35,metalness:0.2,emissive:0x332100,side:THREE.DoubleSide});
-  var prLen=PR_L*SC, prWsc=PR_W*SC, off2=50*SC; var slopeAngle=Math.atan2(80-27,110-45);
+  var prLen=PR_L*SC, prWsc=PR_W*SC, off2=(lw/2+50)*SC; var slopeAngle=Math.atan2(80-27,110-45);
   var slopeLenMM=Math.sqrt((80-27)*(80-27)+(110-45)*(110-45)); var slopeMidX=(80+27)/2, slopeMidY=(45+110)/2, eps=0.001;
   var segPairs3=[];
   if(pat==='U字'){
